@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>heimgrund – Grundstück + Garten</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0f1419;color:#e8edf2}
+@media(prefers-color-scheme:light){body{background:#f6f7f9;color:#16202a}}
+header{padding:16px 20px;border-bottom:1px solid #2a3642}
+header h1{margin:0;font-size:20px}
+header p{margin:4px 0 0;opacity:.75;font-size:13px}
+nav{display:flex;gap:8px;padding:12px 20px}
+nav button{padding:8px 14px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit;cursor:pointer}
+nav button.active{background:#2f7d4f;border-color:#2f7d4f;color:#fff}
+main{padding:0 20px 40px;max-width:900px}
+.card{border:1px solid #2a3642;border-radius:12px;padding:14px;margin:12px 0;background:rgba(255,255,255,.03)}
+label{display:block;margin:8px 0 4px;font-size:13px;opacity:.85}
+input,textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button.primary{background:#2f7d4f;color:#fff;border:0;padding:10px 16px;border-radius:8px;cursor:pointer;margin-top:10px}
+pre{white-space:pre-wrap;font-size:12px;opacity:.9}
+.small{font-size:12px;opacity:.7}
+ul{padding-left:18px}
+</style>
+</head>
+<body>
+<header>
+<h1>🏡 heimgrund</h1>
+<p>Grundstück-Check + Gartenplaner · lokal · Datenbasis: daten-bw.de (agri) · <span id="ver"></span></p>
+</header>
+<nav>
+<button id="tabA" class="active" onclick="show('A')">Grundstück</button>
+<button id="tabB" onclick="show('B')">Garten</button>
+<button id="tabC" onclick="show('C')">Beete</button>
+</nav>
+<main>
+<section id="secA">
+<div class="card">
+<h3>1) Standort prüfen</h3>
+<div class="row">
+<div><label>Breite (lat)</label><input id="lat" value="48.7758" inputmode="decimal"></div>
+<div><label>Länge (lon)</label><input id="lon" value="9.1829" inputmode="decimal"></div>
+</div>
+<label>Name (zum Speichern, optional)</label><input id="label" placeholder="z.B. Zuhause / Garten">
+<button class="primary" onclick="check()">Prüfen</button>
+<button class="primary" style="background:#3a5a7d" onclick="save()">Als Standort speichern</button>
+<p class="small">Beispiel Stuttgart-Mitte: 48.7758, 9.1829. Attribution: © Geoportal BW, LUBW, LGRB, WSV, BMF.</p>
+</div>
+<div class="card"><h3>Ergebnis</h3><pre id="out">Noch nichts geprüft.</pre></div>
+<div class="card"><h3>Empfehlung Garten</h3><pre id="out2">—</pre></div>
+<div class="card"><h3>Gespeicherte Standorte</h3><ul id="sites"></ul><button class="primary" style="background:#3a5a7d" onclick="loadSites()">Neu laden</button></div>
+</section>
+<section id="secB" style="display:none">
+<div class="card"><h3>Garten-Empfehlung zum Punkt</h3>
+<p class="small">Nutzt selben Boden-Kontext wie Grundstück-Check + Saison. DWD-Feindaten folgen (wetterdienst-lxc).</p>
+<pre id="outB">Erst oben prüfen – wird automatisch übernommen.</pre></div>
+</section>
+<section id="secC" style="display:none">
+<div class="card"><h3>Beet anlegen</h3>
+<label>Name</label><input id="beetName" placeholder="z.B. Hochbeet Nord">
+<label>Kultur</label><input id="beetKultur" placeholder="z.B. Kartoffeln">
+<label>Notiz</label><textarea id="beetNotiz" rows="2"></textarea>
+<button class="primary" onclick="addBeet()">Speichern</button>
+</div>
+<div class="card"><h3>Beete</h3><ul id="beete"></ul><button class="primary" style="background:#3a5a7d" onclick="loadBeete()">Neu laden</button></div>
+<div class="card"><h3>Export</h3><a href="/api/export" target="_blank">/api/export (JSON)</a></div>
+</section>
+</main>
+<script>
+async function j(url, opt){const r=await fetch(url,opt);const t=await r.text();try{return JSON.parse(t)}catch(e){return t}}
+function show(x){
+ for(const k of ['A','B','C']){document.getElementById('sec'+k).style.display=(k===x?'block':'none');
+ document.getElementById('tab'+k).classList.toggle('active',k===x)}
+ if(x==='C')loadBeete();
+}
+async function check(){
+ const lat=document.getElementById('lat').value, lon=document.getElementById('lon').value;
+ document.getElementById('out').textContent='Lade …';
+ try{
+  const d=await j(`/api/standort/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+  document.getElementById('out').textContent=JSON.stringify(d,null,2);
+  const e=await j(`/api/garten/empfehlung?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+  document.getElementById('out2').textContent=JSON.stringify(e,null,2);
+  document.getElementById('outB').textContent=JSON.stringify(e,null,2);
+ }catch(err){document.getElementById('out').textContent='Fehler: '+err}
+}
+async function save(){
+ const label=document.getElementById('label').value||'Standort';
+ const lat=parseFloat(document.getElementById('lat').value), lon=parseFloat(document.getElementById('lon').value);
+ const d=await j('/api/standorte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,lat,lon})});
+ alert('Gespeichert: '+JSON.stringify(d)); loadSites();
+}
+async function loadSites(){
+ const d=await j('/api/standorte');
+ document.getElementById('sites').innerHTML=d.map(s=>`<li><b>${s.label}</b> – ${s.lat}, ${s.lon}</li>`).join('')||'<li>– leer –</li>';
+}
+async function loadBeete(){
+ const d=await j('/api/beete');
+ document.getElementById('beete').innerHTML=d.map(b=>`<li><b>${b.name}</b> (${b.kultur}) <button onclick="delBeet(${b.id})">löschen</button><br><span class="small">${b.notiz||''}</span></li>`).join('')||'<li>– leer –</li>';
+}
+async function addBeet(){
+ const body={name:document.getElementById('beetName').value,kultur:document.getElementById('beetKultur').value,notiz:document.getElementById('beetNotiz').value};
+ if(!body.name){alert('Name fehlt');return}
+ await j('/api/beete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ document.getElementById('beetName').value='';document.getElementById('beetKultur').value='';document.getElementById('beetNotiz').value='';
+ loadBeete();
+}
+async function delBeet(id){await fetch('/api/beete/'+id,{method:'DELETE'});loadBeete()}
+j('/api/health').then(h=>document.getElementById('ver').textContent=(h.version||'')+' · '+(h.status||''));
+loadSites();
+</script>
+</body>
+</html>
