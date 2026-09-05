@@ -114,7 +114,15 @@ setup_in_ct(){
     id $APP_USER &>/dev/null || useradd -r -m -s /bin/bash $APP_USER
     mkdir -p $APP_DIR $DATA_DIR
     if [[ -d $APP_DIR/.git ]]; then
-      git -C $APP_DIR fetch --all && git -C $APP_DIR checkout $BRANCH && git -C $APP_DIR pull --ff-only || true
+      echo \"--- Update: Stand vorher ---\"
+      git -C $APP_DIR log --oneline -3 || true
+      git -C $APP_DIR status --short | head -10 || true
+      echo \"--- Update: hole $BRANCH von origin (lokale Aenderungen im CT werden verworfen) ---\"
+      git -C $APP_DIR fetch --all
+      git -C $APP_DIR checkout $BRANCH
+      git -C $APP_DIR reset --hard origin/$BRANCH
+      echo \"--- Update: Stand nachher ---\"
+      git -C $APP_DIR log --oneline -3
     elif [[ -n \"$REPO\" ]]; then
       rm -rf ${APP_DIR}.tmp && git clone --depth 1 --branch $BRANCH \"$REPO\" ${APP_DIR}.tmp || echo \"WARN: git clone fehlgeschlagen ($REPO) - erwarte pct push der App-Dateien\"
       if [[ -d ${APP_DIR}.tmp/heimgrund-lxc/app ]]; then rm -rf $APP_DIR; mv ${APP_DIR}.tmp/heimgrund-lxc $APP_DIR/.. 2>/dev/null || true; fi
@@ -137,6 +145,7 @@ setup_in_ct(){
     systemctl daemon-reload
     systemctl enable heimgrund.service
     systemctl restart heimgrund.service
+    echo \"--- Deployed: \$(git -C $APP_DIR rev-parse --short HEAD 2>/dev/null || echo '?') / \$(grep '^APP_VERSION' $APP_DIR/app/main.py 2>/dev/null || echo 'VERSION?') ---\"
   "
 }
 

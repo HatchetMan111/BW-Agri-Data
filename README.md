@@ -69,6 +69,20 @@ pct exec 150 -- bash -c 'git -C /opt/heimgrund pull --ff-only; /opt/heimgrund-ve
 pct stop 150 && pct destroy 150
 ```
 
+## Problemlösung: Version bleibt nach Update alt
+
+Kopfzeile zeigt alte Version (statt aktuell)? Dann hat das Update den Code nicht übernommen
+(typisch: lokale Dateiänderungen im CT blockierten früher das `git pull`).
+Diagnose + Reparatur auf dem Proxmox-Host:
+
+```bash
+pct exec 150 -- git -C /opt/heimgrund log --oneline -3
+pct exec 150 -- git -C /opt/heimgrund status --short
+# Reparatur: hart auf GitHub-Stand setzen + Dienst neu starten
+pct exec 150 -- bash -c 'git -C /opt/heimgrund fetch --all && git -C /opt/heimgrund reset --hard origin/main && grep ^APP_VERSION /opt/heimgrund/app/main.py && systemctl restart heimgrund'
+curl http://<CT-IP>:8000/api/health   # "version" muss jetzt aktuell sein
+```
+
 ## Manueller Test (ohne Proxmox)
 
 ```bash
