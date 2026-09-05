@@ -72,6 +72,7 @@ svg.spark{width:100%;height:56px;display:block}
 <button id="tabB" onclick="show('B')">Garten</button>
 <button id="tabD" onclick="show('D')">🚜 Acker-Test</button>
 <button id="tabC" onclick="show('C')">Beete</button>
+<button id="tabE" onclick="show('E')">❓ Begriffe</button>
 </nav>
 <main>
 
@@ -114,6 +115,14 @@ svg.spark{width:100%;height:56px;display:block}
 <div id="agriOut"></div>
 </section>
 
+<section id="secE" style="display:none">
+<div class="card"><h3>❓ Fachbegriffe einfach erklärt</h3>
+<p class="small">Alle Begriffe, die in den Ergebnissen vorkommen — in normalem Deutsch, mit Tipp was zu tun ist.</p>
+<input id="glosQ" placeholder="Suchen, z. B. Schluff …" oninput="renderGlos(this.value)">
+</div>
+<div id="glosOut"></div>
+</section>
+
 <section id="secC" style="display:none">
 <div class="card"><h3>➕ Beet anlegen</h3>
 <label>Name</label><input id="beetName" placeholder="z. B. Hochbeet Nord">
@@ -141,12 +150,13 @@ async function j(url, opt){
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(x){
-  for(const k of ["A","B","C","D"]){
+  for(const k of ["A","B","C","D","E"]){
     document.getElementById("sec"+k).style.display = (k===x?"block":"none");
     document.getElementById("tab"+k).classList.toggle("active", k===x);
   }
   if(x==="C") loadBeete();
   if(x==="D" && !document.getElementById("agriOut").innerHTML) checkAgri();
+  if(x==="E" && !document.getElementById("glosOut").innerHTML) renderGlos("");
   if(x==="A" && map) setTimeout(()=>map.invalidateSize(), 50);
 }
 function osmUrl(lat, lon){ return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`; }
@@ -305,6 +315,65 @@ function renderGarten(e){
     <div class="tip">💧 ${esc(e.giess_empfehlung||"–")}</div>
     ${e.boden_einschaetzung?`<p class="small">🌍 ${esc(e.boden_einschaetzung)}</p>`:""}
     ${e.wetter?`<p class="small">Aktuell: ${e.wetter.icon} ${e.wetter.temp} °C, 💧 ${e.wetter.feuchte} %</p>`:""}`;
+}
+const GLOSSAR = [
+["🌍 Boden", [
+["Sand (Bodenart)", "Die gröbste Kornfraktion (2–0,063 mm). Lässt Wasser schnell durch, speichert aber kaum Wasser und Nährstoffe. Tipp: viel Kompost/Mulch, öfter wässern. Kartoffeln lieben Sand."],
+["Schluff", "Die mittlere Kornfraktion (0,063–0,002 mm) – fühlt sich mehlig an. Speichert Wasser und Nährstoffe sehr gut, deshalb sehr fruchtbar. Schwäche: verschlämmt bei Regen, bildet harte Krusten und erodiert am Hang. Tipp: nie nass bearbeiten, immer Bodenbedeckung/Mulch, Humus aufbauen."],
+["Ton", "Die feinste Kornfraktion (kleiner als 0,002 mm). Hält am meisten Wasser und Nährstoffe, ist aber schwer zu bearbeiten, neigt zu Staunässe und reißt bei Trockenheit. Tipp: nur im abgetrockneten Zustand bearbeiten, Sand + Kompost einarbeiten."],
+["Bodenart", "Die Mischung aus Sand, Schluff und Ton – z. B. lehmiger Sand oder schluffiger Lehm. Sie bestimmt, wie der Boden Wasser hält, ob er sich leicht bearbeiten lässt und welche Kulturen passen. Faustregel: Extreme meiden, die lehmige Mitte ist am vielseitigsten."],
+["pH-Wert", "Sagt, ob der Boden sauer oder alkalisch ist (Skala 0–14, 7 = neutral). Die meisten Gemüse mögen 6,0–7,2. Darunter: Kalk streuen. Darüber: eher kalkliebende Kulturen wie Kohl oder Lavendel."],
+["Humus (g/kg)", "Der Gehalt an organischer Substanz – Futter für Bodenleben, Wasserspeicher und Nährstoffpuffer in einem. Über 20 g/kg ist gut. Aufbauen mit Kompost, Mulch und Gründüngung."],
+["Garten-Score / Acker-Score", "Unsere 0–100-Zusammenfassung: Boden, Klima, Hang, Umfeld und Schutzgebiete werden gewichtet verrechnet. Über 80 hervorragend, 65+ gut, 50+ mittel, darunter schwierig. Details stehen bei den Faktoren-Balken."],
+["Ackerzahl", "Alte amtliche Kennzahl der Bodenschätzung (Skala grob 10–100): Je höher, desto ertragreicher der Acker. Unter 30 gilt als schwach, über 60 als sehr gut. Wichtig bei Kauf/Pacht."],
+["Erosion", "Abtrag von Boden durch Wasser (Starkregen am Hang) oder Wind (offene Flächen). Schluffige Böden und Hänge über ~7 % sind gefährdet. Gegenmittel: Bodenbedeckung, Mulch, Querbewirtschaftung, Hecken."],
+]],
+["💧 Wasser", [
+["Überschwemmungsgebiet (ÜSG)", "Rechtlich festgelegte Fläche, die bei Hochwasser überflutet werden kann. Bauen ist dort stark eingeschränkt oder verboten (§ 78 WHG). 🛑 im Behörden-Check heißt: unbedingt beim Bauamt klären."],
+["HQ100 / HQextrem", "Hochwasser, das im Schnitt einmal in 100 Jahren (HQ100) bzw. seltener, aber heftiger (HQextrem) auftritt. HQ100 ist die Bemessungsgröße für Schutz und Bauverbote – kein Versprechen, dass es nur alle 100 Jahre kommt."],
+["Wasserschutzgebiet (WSG)", "Schutzfläche um Trinkwasserbrunnen. Zone I (eng, meist eingezäunt): fast alles verboten. Zone II: Bauen/Düngen stark eingeschränkt. Zone III: Auflagen möglich. Auskunft gibt die Untere Wasserbehörde."],
+["Pegel / Wasserstand", "Gemessene Wasserhöhe eines Flusses in cm an einer Messstation – kein absolutes Maß, sondern relativ zum Pegelnullpunkt. Wichtig sind Veränderung (Trend ↗/↘) und Vergleich mit langjährigen Mittelwerten."],
+["Versickerung", "Ob Regenwasser im Boden versickern kann. Sand lässt durch, Ton und versiegelte Flächen nicht. Bei schlechter Versickerung: Zisterne, Rigole oder Mulden planen – und Keller gegen Rückstau sichern."],
+]],
+["🦋 Natur & Schutzgebiete", [
+["Naturschutzgebiet (NSG)", "Strengste Schutzkategorie: Betreten oft nur auf Wegen, Bauen/Mähen/Düngen meist verboten. Direkter Treffer am Punkt = K.O. für Bauvorhaben."],
+["FFH-Gebiet (Natura 2000)", "EU-weites Schutznetz für seltene Arten und Lebensräume. Eingriffe brauchen eine Verträglichkeitsprüfung – Bauen wird schwierig bis unmöglich."],
+["Landschaftsschutzgebiet (LSG)", "Schutz von Landschaftsbild und Erholung. Bauen ist eingeschränkt und genehmigungspflichtig, aber oft möglich. Beim Landratsamt anfragen."],
+["FFH-Mähwiese", "Artenreiche, extensiv bewirtschaftete Wiese (ein- bis zweimal mähen, wenig Dünger). Umbruch oder Intensivierung ist verboten – für Grünlandnutzung aber ein Gütesiegel."],
+["Biosphärengebiet", "Modellregion für nachhaltiges Leben (z. B. Schwäbische Alb). Zonen: Kernzone (Betreten verboten) → Pflegezone → Entwicklungszone (Wohnen/Wirtschaften erwünscht)."],
+["Biotop", "Besonders wertvoller Lebensraum (z. B. Feuchtwiese, Hecke). Oft gesetzlich geschützt – nicht bebauen, nicht entwässern."],
+]],
+["🚜 Landwirtschaft", [
+["LPIS / Feldblock", "Das EU-System (InVeKoS), das jede geförderte Agrarfläche als Referenzparzelle erfasst. Der Feldblock ist die Geometrie deines Schlags – Basis für Agrarförderung und Pachtverträge."],
+["InVeKoS", "Kürzel für das EU-Verwaltungssystem der Agrarförderung: Wer Direktzahlungen bekommt, meldet Flächen und Kulturen – diese Daten stecken (anonymisiert) hinter LPIS-Karten."],
+["Fruchtfolge", "Jährlicher Wechsel der Kulturen auf einem Beet/Schlag, damit der Boden nicht einseitig auslaugt und Krankheiten sich nicht festsetzen. Einfach: Starkzehrer → Mittelzehrer → Schwachzehrer → Pause/Gründüngung."],
+["Gründüngung", "Pflanzen (z. B. Phacelia, Klee, Senf), die man nicht erntet, sondern als Bodenfutter sät: lockert, düngt und schützt vor Erosion. Ideal für Herbst/Winter."],
+["Streuobst", "Hochstamm-Obstbäume auf Wiesen – typisch für BW, ökologisch wertvoll, pflegeleicht nach der Anwachsphase. Erste Ernte nach 3–5 Jahren."],
+]],
+["🌤️ Klima & Wetter", [
+["Hangneigung (%)", "100 % = 45 Grad. Unter 2 % eben, 2–7 % gut bewirtschaftbar, über 12 % steil: Erosion, teure Bewirtschaftung, schwieriges Bauen (Stützmauern, Zufahrt)."],
+["Exposition", "Die Himmelsrichtung des Hangs. Süd/Südwest = wärmster, sonnigster (Wein, Tomaten), Nord = kühl und feucht (eher Grünland/Wald)."],
+["Frosttage / Hitzetage", "Tage unter 0 °C bzw. ab 30 °C im langjährigen Mittel. Viele Frosttage = Spätfrostgefahr für Obstblüte; viele Hitzetage = Bewässerung einplanen."],
+["Jahresniederschlag", "Regenmenge pro Jahr in mm. 650–900 mm ist ideal für Ackerbau ohne Bewässerung; darunter wird's trocken, darüber staunass."],
+["ERA5", "EU-Klimadatensatz (Copernicus), aus dem wir die 5-Jahres-Mittel für deinen Punkt berechnen – echte Mess-Modell-Kombi, keine Schätzung."],
+]],
+["🗺️ Datenquellen", [
+["SoilGrids", "Weltweite Bodenkarte der ISRIC (Uni Wageningen): Ton/Sand/Schluff, pH und Humus pro 250-m-Raster, CC-BY 4.0. In Städten oft leer (versiegelt) – dann 50–200 m daneben prüfen."],
+["Open-Meteo", "Freie Wetter-APIs (CC-BY 4.0): Vorhersage, Höhe und Archivwerte – ohne Schlüssel, direkt vom Server in deinen LXC."],
+["PEGELONLINE", "Amtliche Wasserstände der Bundeswasserstraßen (WSV) – hochwertiger Datensatz (HVD), alle 15 Minuten neu. Küsten- und Binnenpegel."],
+["LUBW / RIPS", "Landesanstalt für Umwelt BW: liefert Überschwemmungsgebiete, Wasserschutz, Naturschutz & Co. als amtliche Geodaten (DL-BY-2.0)."],
+["AWGN", "Das wasserwirtschaftliche Gewässernetz von BW: jedes relevante Fließgewässer plus Einzugsgebiete – kommt als Nächstes in die App."],
+["OpenStreetMap", "Freie Weltkarte von Freiwilligen (ODbL): Schutzgebiete-Näherung, Landnutzung, Adresssuche und Kartendarstellung."],
+]],
+];
+function renderGlos(filter){
+  const f = (filter||"").toLowerCase().trim();
+  const html = GLOSSAR.map(([gruppe, begriffe])=>{
+    const treffer = begriffe.filter(([t, e])=>!f || t.toLowerCase().includes(f) || e.toLowerCase().includes(f));
+    if(!treffer.length) return "";
+    return `<div class="card"><h3>${esc(gruppe)}</h3><ul class="clean">${treffer.map(([t,e])=>`<li><b>${esc(t)}</b><br><span class="small">${esc(e)}</span></li>`).join("")}</ul></div>`;
+  }).join("");
+  document.getElementById("glosOut").innerHTML = html || '<div class="card"><p class="small">Nichts gefunden – anderen Suchbegriff versuchen.</p></div>';
 }
 async function checkAgri(){
   const lat = document.getElementById("lat").value.trim(),

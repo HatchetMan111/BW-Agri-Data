@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -866,7 +866,8 @@ def index() -> FileResponse:
     idx = STATIC_DIR / "index.html"
     if not idx.exists():
         raise HTTPException(status_code=500, detail="Frontend fehlt: app/static/index.html")
-    return FileResponse(str(idx))
+    # no-store: Nach Updates sofort die neue UI, kein veralteter Browser-Cache
+    return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/export")
