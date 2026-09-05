@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -363,19 +363,66 @@ def landuse_de(k: str) -> str:
             "allotments": "Kleingärten"}.get(k, k)
 
 
-def geocode_live(q: str) -> dict:
-    ckey = f"geo:{q.strip().lower()}"
-    hit = cache_get(ckey, 90 * 86400)
+# LUBW-Fachdienste (RIPS/GDI-BW, alle WFS 2.0, Punktabfrage via Mini-BBox).
+LUBW_BASE = ("https://rips-gdi.lubw.baden-wuerttemberg.de/arcgis/services/"
+             "wfs/{svc}/MapServer/WFSServer")
+LUBW_LAYER = [
+    {"svc": "Naturschutzgebiet", "tn": "Naturschutzgebiet:Naturschutzgebiet",
+     "label": "Naturschutzgebiet", "stufe": "rot"},
+    {"svc": "FFH_Gebiet", "tn": "FFH_Gebiet:FFH_Gebiet",
+     "label": "FFH-Gebiet (Natura 2000)", "stufe": "rot"},
+    {"svc": "Landschaftsschutzgebiet", "tn": "Landschaftsschutzgebiet:Landschaftsschutzgebiet",
+     "label": "Landschaftsschutzgebiet", "stufe": "gelb"},
+    {"svc": "Wasserschutzgebiet", "tn": "Wasserschutzgebiet:Wasserschutzgebiet",
+     "label": "Wasserschutzgebiet", "stufe": "gelb"},
+    {"svc": "FFH_Maehwiese", "tn": "FFH_Maehwiese:FFH_Maehwiese",
+     "label": "FFH-Mähwiese", "stufe": "gelb"},
+    {"svc": "Ueberschwemmungsgebiet", "tn": "Ueberschwemmungsgebiet:UESG",
+     "label": "Überschwemmungsgebiet", "stufe": "rot"},
+]
+
+
+def _lubw_point(layer: dict, lat: float, lon: float) -> dict:
+    import re as _re
+    d = 0.00045  # ~50 m Box
+    params = {"service": "WFS", "version": "2.0.0", "request": "GetFeature",
+              "typeNames": layer["tn"], "srsName": "urn:ogc:def:crs:EPSG::4326",
+              "bbox": f"{lat-d},{lon-d},{lat+d},{lon+d},urn:ogc:def:crs:EPSG::4326",
+              "count": 3}
+    try:
+        full = LUBW_BASE.format(svc=layer["svc"]) + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(full, headers=UA)
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            xml = resp.read().decode("utf-8", "ignore")
+    except Exception as e:  # noqa: BLE001
+        return {"label": layer["label"], "stufe": layer["stufe"], "status": "offline",
+                "error": f"{type(e).__name__}: {e}"}
+    m = _re.search(r'numberMatched="(\d+)"', xml)
+    anzahl = int(m.group(1)) if m else 0
+    namen: list[str] = []
+    if anzahl:
+        for pat in (r"<[\w:]*OBJEKT[\w:]*>([^<]{1,120})</",
+                    r"<[\w:]*NAME[\w:]*>([^<]{1,120})</",
+                    r"<[\w:]*GEBIET[\w:]*>([^<]{1,120})</"):
+            namen = [n.strip() for n in _re.findall(pat, xml)
+                     if n.strip() and not n.strip().replace(".", "").replace("-", "").isdigit()]
+            if namen:
+                break
+    return {"label": layer["label"], "stufe": layer["stufe"], "status": "live",
+            "treffer": anzahl > 0, "anzahl": anzahl, "namen": namen[:3]}
+
+
+def schutz_amtlich(lat: float, lon: float) -> dict:
+    ckey = f"amt:{round(lat,3)}:{round(lon,3)}"
+    hit = cache_get(ckey, 30 * 86400)
     if hit is not None:
+        hit["cached"] = True
         return hit
-    params = {"q": q, "format": "json", "limit": 5, "countrycodes": "de",
-              "viewbox": "7.4,49.9,10.6,47.0", "bounded": 0, "addressdetails": 1}
-    data, err = fetch_json("https://nominatim.openstreetmap.org/search", timeout=15, params=params)
-    if data is None:
-        return {"status": "offline", "error": err, "treffer": []}
-    out = {"status": "live",
-           "treffer": [{"name": t["display_name"], "lat": float(t["lat"]), "lon": float(t["lon"]),
-                        "typ": t.get("type", "")} for t in data]}
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = [(layer, ex.submit(_lubw_point, layer, lat, lon)) for layer in LUBW_LAYER]
+        layers = [{**layer, **f.result()} for layer, f in futs]
+    out = {"status": "live" if any(x["status"] == "live" for x in layers) else "offline",
+           "quelle": "LUBW RIPS/GDI-BW (WFS, DL-BY-2.0)", "cached": False, "layer": layers}
     cache_put(ckey, out)
     return out
 
@@ -489,7 +536,9 @@ def agri_test(lat: float, lon: float) -> dict:
         f_klima = ex.submit(climate_live, lat, lon)
         f_hang = ex.submit(slope_live, lat, lon)
         f_osm = ex.submit(osm_live, lat, lon)
+        f_amt = ex.submit(schutz_amtlich, lat, lon)
         boden, klima, hang, osm = f_boden.result(), f_klima.result(), f_hang.result(), f_osm.result()
+        amt = f_amt.result()
 
     faktoren: dict[str, dict] = {}
     ko = None
@@ -541,8 +590,21 @@ def agri_test(lat: float, lon: float) -> dict:
                               "text": f"Agrar-Anteil im Umfeld: {round(anteil*100)} % (OSM, 3 km)"}
     else:
         faktoren["umfeld"] = {"gewicht": 15, "wert": None, "text": "Umfeld offline"}
-    # Schutz 10 %
-    if osm.get("status") == "live":
+    # Schutz 10 % – amtliche LUBW-Layer haben Vorrang vor OSM-Naeherung
+    amt_layer = {x["label"]: x for x in amt.get("layer", [])} if amt.get("status") == "live" else {}
+    if amt_layer:
+        treffer_rot = [k for k in ("Naturschutzgebiet", "FFH-Gebiet (Natura 2000)",
+                                   "Überschwemmungsgebiet") if amt_layer.get(k, {}).get("treffer")]
+        treffer_gelb = [k for k in ("Landschaftsschutzgebiet", "Wasserschutzgebiet",
+                                    "FFH-Mähwiese") if amt_layer.get(k, {}).get("treffer")]
+        if treffer_rot:
+            s, txt = 30, "Direkt in " + ", ".join(treffer_rot) + " – Nutzung stark eingeschraenkt!"
+        elif treffer_gelb:
+            s, txt = 65, "In " + ", ".join(treffer_gelb) + " – Auflagen beachten"
+        else:
+            s, txt = 100, "Keine Schutzgebiets-Treffer (LUBW-Fachdaten, Punktabfrage)"
+        faktoren["schutz"] = {"gewicht": 10, "wert": s, "text": txt}
+    elif osm.get("status") == "live":
         res = osm.get("reservate", [])
         nearest = min([r["dist_km"] for r in res], default=99)
         if nearest < 0.5:
@@ -563,8 +625,10 @@ def agri_test(lat: float, lon: float) -> dict:
              if score is not None else "unbestimmt")
     return {"lat": lat, "lon": lon, "score": score, "label": label, "ko_kriterium": ko,
             "faktoren": faktoren, "kulturen": kulturmatrix(boden, klima, hang),
+            "behoerden": amt.get("layer", []) if amt.get("status") == "live" else [],
             "quellen": {"boden": boden.get("quelle"), "klima": klima.get("quelle"),
-                        "hang": hang.get("quelle"), "umfeld": osm.get("quelle")}}
+                        "hang": hang.get("quelle"), "umfeld": osm.get("quelle"),
+                        "behoerden": amt.get("quelle")}}
 
 
 def kulturmatrix(boden: dict, klima: dict, hang: dict) -> list[dict]:
@@ -653,15 +717,17 @@ def standort_reverse(lat: float = Query(ge=-90, le=90),
     try:
         in_bw = 47.0 <= lat <= 49.9 and 7.4 <= lon <= 10.6
         t0 = time.time()
-        with ThreadPoolExecutor(max_workers=4) as ex:
+        with ThreadPoolExecutor(max_workers=5) as ex:
             f_boden = ex.submit(soil_live, lat, lon)
             f_wetter = ex.submit(weather_live, lat, lon)
             f_pegel = ex.submit(pegel_live, lat, lon)
             f_osm = ex.submit(osm_live, lat, lon)
-            boden, wetter, pegel, osm = (f_boden.result(), f_wetter.result(),
-                                         f_pegel.result(), f_osm.result())
+            f_amt = ex.submit(schutz_amtlich, lat, lon)
+            boden, wetter, pegel, osm, amt = (f_boden.result(), f_wetter.result(),
+                                              f_pegel.result(), f_osm.result(), f_amt.result())
         return {"lat": lat, "lon": lon, "in_bw": in_bw,
                 "boden": boden, "wetter": wetter, "pegel": pegel, "umfeld": osm,
+                "behoerden": amt,
                 "dauer_s": round(time.time() - t0, 1),
                 "attribution": ("Boden: SoilGrids/ISRIC CC-BY 4.0 · Wetter: Open-Meteo CC-BY 4.0 · "
                                 "Pegel: WSV PEGELONLINE · Karte/Daten: © OpenStreetMap ODbL · "

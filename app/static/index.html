@@ -240,7 +240,13 @@ function renderReport(d){
       <div class="bignum" style="color:${col}">${sc.wert}<span class="small">/100 · ${esc(sc.label)} für Garten</span></div>
       <p style="margin:4px 0"><b>Bodenart: ${esc(b.bodenart||"–")}</b> <span class="small">(${esc(b.tiefe||"")})</span></p>
       ${texBar("Sand", b.sand_pct||0, "#d9b45b")}${texBar("Schluff", b.schluff_pct||0, "#9db87a")}${texBar("Ton", b.ton_pct||0, "#7a5b3a")}
-      <p class="small">pH-Wert: <b>${b.ph==null?"–":b.ph}</b>${b.ph_wertung?" – "+esc(b.ph_wertung):""}${b.humus_g_kg!=null?` · Humus: <b>${b.humus_g_kg} g/kg</b>`:""}</p>`;
+      <p class="small">pH-Wert: <b>${b.ph==null?"–":b.ph}</b>${b.ph_wertung?" – "+esc(b.ph_wertung):""}${b.humus_g_kg!=null?` · Humus: <b>${b.humus_g_kg} g/kg</b>`:""}</p>
+      <details class="raw"><summary>Was bedeuten Sand, Schluff, Ton?</summary><p class="small">
+      Das sind die <b>Korngrößen</b> des Bodens: <b>Sand</b> (2–0,063 mm, grob – lässt Wasser durch, hält kaum Nährstoffe),
+      <b>Schluff</b> (0,063–0,002 mm, mittel – <b>speichert Wasser und Nährstoffe sehr gut</b>, verschlämmt aber bei Regen und bildet Krusten),
+      <b>Ton</b> (&lt;0,002 mm, fein – hält am meisten Wasser/Nährstoffe, ist aber schwer zu bearbeiten und neigt zu Staunässe).<br>
+      Die Mischung bestimmt die <b>Bodenart</b>: viel Sand = leicht/durchlässig (Kartoffeln lieben das), viel Schluff = fruchtbar aber verschlämmungsanfällig (mulchen!), viel Ton = schwer (nur trocken bearbeiten).
+      Ideal für Gemüse: lehmige Mitte mit Humus.</p></details>`;
   } else if(b.versiegelt){
     bodenHtml = `<div class="warnbox">🏗️ ${esc(b.hinweis||"Versiegelte Fläche.")}</div>`;
   } else {
@@ -266,6 +272,14 @@ function renderReport(d){
   }
   const res = (u.reservate||[]).map(r=>`<li>🦋 <b>${esc(r.name)}</b> <span class="badge gray">${r.dist_km} km</span> <span class="small"><a href="${osmUrl(r.lat,r.lon)}" target="_blank" rel="noopener">Karte ↗</a></span></li>`).join("");
   const nutz = (u.landnutzung||[]).map(n=>`<span class="chip gray">${esc(n.typ)} ×${n.treffer}</span>`).join("");
+  const bh = d.behoerden||{};
+  const bhRows = (bh.layer||[]).map(l=>{
+    const ic = l.status!=="live" ? "❔" : l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
+    const det = l.status!=="live" ? `<span class="small">offline</span>`
+      : l.treffer ? `<br><span class="small">Treffer: <b>${esc((l.namen||[]).join("; ")||l.anzahl+" Fläche(n)")}</b></span>`
+      : `<span class="small">frei</span>`;
+    return `<li>${ic} <b>${esc(l.label)}</b> ${det}</li>`;
+  }).join("");
   return `
   <div class="card"><h3>🧾 ${esc(d.lat)}, ${esc(d.lon)} <span class="small"><a href="${osmUrl(d.lat,d.lon)}" target="_blank" rel="noopener">OSM ↗</a> · ${d.dauer_s}s</span></h3><div>${bw}</div></div>
   <div class="grid">
@@ -273,9 +287,13 @@ function renderReport(d){
     <div class="card"><h3>🌤️ Wetter &amp; Höhe ${liveBadge(wx)}</h3>${wetterHtml}</div>
     <div class="card"><h3>💧 Pegel in der Nähe ${liveBadge(p)}</h3>${pegelHtml}</div>
     <div class="card"><h3>🦋 Natur &amp; Nutzung ${liveBadge(u)}</h3>
-      ${res?`<ul class="clean">${res}</ul>`:`<p class="small">Keine Schutzgebiete im Umkreis 15 km gefunden.</p>`}
+      ${res?`<ul class="clean">${res}</ul>`:`<p class="small">Keine Schutzgebiete im Umkreis 15 km gefunden (OSM).</p>`}
       <p style="margin:8px 0 4px"><b>Nutzung im Umfeld (3 km):</b></p><div>${nutz||'<span class="small">–</span>'}</div>
     </div>
+  </div>
+  <div class="card"><h3>🏛️ Behörden-Check (LUBW-Fachdaten) ${liveBadge(bh)}</h3>
+    ${bhRows?`<ul class="clean">${bhRows}</ul>`:`<p class="small">Behördendaten offline – später erneut versuchen.</p>`}
+    <p class="small">Punktabfrage (±50 m) in NSG, FFH, LSG, WSG, FFH-Mähwiesen, Überschwemmungsgebieten. 🛑 = Bauen/Nutzung stark eingeschränkt · ⚠️ = Auflagen prüfen · ✅ = frei. Quelle: LUBW RIPS (DL-BY-2.0).</p>
   </div>
   <div class="card"><h3>🌱 Garten-Empfehlung</h3><div id="gartenInline"><p class="small">Wird geladen …</p></div></div>
   <details class="raw card"><summary>Rohdaten (für Fehlersuche)</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
@@ -321,6 +339,10 @@ function renderAgri(a){
     <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span></div>
   </div>
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${(a.behoerden||[]).length?`<div class="card"><h3>🏛️ Behörden-Layer</h3><ul class="clean">${a.behoerden.map(l=>{
+    const ic = l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
+    return `<li>${ic} <b>${esc(l.label)}</b>${l.treffer?` – <span class="small">${esc((l.namen||[]).join("; "))}</span>`:' <span class="small">frei</span>'}</li>`;
+  }).join("")}</ul></div>`:""}
   <div class="card"><h3>🌾 Kultur-Eignung</h3><ul class="clean">${kult}</ul>
   <p class="small">Regelwerk transparent im Code (kulturmatrix). LPIS-Feldblock-Prüfung folgt als WFS-Punktabfrage.</p></div>
   <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(a,null,2))}</pre></details>`;

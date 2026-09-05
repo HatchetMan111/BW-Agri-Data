@@ -19,6 +19,7 @@ ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 | 🔎 Suche | Nominatim-Adresssuche + Klick auf Karte statt Koordinaten-Tippen |
 | 🌱 Garten | Gieß-Empfehlung aus echtem Regen + Boden + Saison |
 | 🚜 Acker-Test | Eignungs-Score (Boden 35 / Klima 20 / Hang 20 / Umfeld 15 / Schutz 10) + Kulturmatrix für Weizen, Mais, Kartoffel, Grünland, Streuobst, Wein — Klima aus ERA5 2020–24, Hang aus Höhenmodell |
+| 🏛️ Behörden-Check | Punktabfrage (±50 m) in LUBW-Fachdaten: NSG, FFH, LSG, WSG, FFH-Mähwiesen, Überschwemmungsgebiete — mit Gebietsnamen |
 
 ## Einzeiler (Proxmox-Host als root)
 
