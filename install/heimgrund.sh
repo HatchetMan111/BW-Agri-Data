@@ -124,13 +124,19 @@ setup_in_ct(){
     test -f $APP_DIR/app/main.py || { echo 'FEHLER: app/main.py fehlt. Entweder REPO korrigieren oder Dateien per pct push kopieren:'; echo '  pct push <CTID> app/main.py /opt/heimgrund/app/main.py'; exit 1; }
     python3 -m venv $VENV_DIR || true
     $VENV_DIR/bin/pip install --upgrade pip wheel
-    $VENV_DIR/bin/pip install -r $APP_DIR/app/requirements.txt
+    if [[ -f $APP_DIR/app/requirements.txt ]]; then
+      $VENV_DIR/bin/pip install -r $APP_DIR/app/requirements.txt
+    else
+      echo \"WARN: requirements.txt fehlt (altes Checkout) - installiere Minimaldeps\"
+      $VENV_DIR/bin/pip install \"fastapi>=0.110,<1\" \"uvicorn[standard]>=0.29,<1\"
+    fi
     mkdir -p $DATA_DIR
     chown -R $APP_USER:$APP_USER $APP_DIR $DATA_DIR
     cp -f $APP_DIR/systemd/heimgrund.service /etc/systemd/system/heimgrund.service
     sed -i 's/^Environment=APP_PORT=.*/Environment=APP_PORT=$APP_PORT/' /etc/systemd/system/heimgrund.service
     systemctl daemon-reload
-    systemctl enable --now heimgrund.service
+    systemctl enable heimgrund.service
+    systemctl restart heimgrund.service
   "
 }
 
