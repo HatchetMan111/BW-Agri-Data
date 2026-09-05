@@ -27,12 +27,18 @@ ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/BW-Agri-Data/main/install/heimgrund.sh)"
 ```
 
-Mit eigenem Repo / CT-ID / statischer IP:
+Mit eigenem Repo / CT-ID / statischer IP / Storage:
 
 ```bash
 REPO=https://github.com/HatchetMan111/BW-Agri-Data CTID=150 IPV4=192.168.1.150/24 GW=192.168.1.1 \
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/HatchetMan111/BW-Agri-Data/main/install/heimgrund.sh)"
 ```
+
+Der Installer wählt automatisch (nur falls nötig):
+- **nächsten freien CTID**, wenn `$CTID` von einem fremden Container belegt ist
+  (eigener `heimgrund`-CT → Update-Pfad, idempotent)
+- **erstes aktives rootdir-Storage** + vorhandenes Debian-13-Template
+- Per Env erzwingbar: `CTID=160 STORAGE=local CT_HOSTNAME=heimgrund ...`
 
 Debug mit vollem Trace:
 

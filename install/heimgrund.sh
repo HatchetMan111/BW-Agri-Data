@@ -13,11 +13,13 @@
 set -euo pipefail
 
 # ---------------- Variablen (oben, anpassbar) ----------------
+# HINWEIS: bewusst CT_HOSTNAME statt HOSTNAME (letzteres ist auf vielen
+# Hosts bereits auf den Node-Namen gesetzt und wuerde den Default ueberstimmen).
+INSTALLER_VERSION="0.5.0"
 CTID="${CTID:-150}"
-HOSTNAME="${HOSTNAME:-heimgrund}"
-TEMPLATE="${TEMPLATE:-local:vztmpl/debian-13-standard_13.0-1_amd64.tar.zst}"
-TEMPLATE_FALLBACK="${TEMPLATE_FALLBACK:-local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst}"
-STORAGE="${STORAGE:-local-lvm}"
+CT_HOSTNAME="${CT_HOSTNAME:-heimgrund}"
+TEMPLATE="${TEMPLATE:-}"     # leer = automatisch suchen/laden (Debian 13)
+STORAGE="${STORAGE:-}"       # leer = automatisch (erstes aktives rootdir-Storage)
 DISK_SIZE="${DISK_SIZE:-12G}"
 CORES="${CORES:-2}"
 MEMORY="${MEMORY:-2048}"
@@ -68,23 +70,66 @@ require_root(){
 }
 
 pick_template(){
-  if pveam list "$STORAGE" 2>/dev/null | grep -q "debian-13-standard"; then return 0; fi
-  if pveam list local 2>/dev/null | grep -q "debian-13-standard"; then
-    TEMPLATE="local:vztmpl/$(pveam list local 2>/dev/null | grep -o 'debian-13-standard[^ ]*amd64.tar.zst' | head -1)"
-    return 0
+  # 1) explizit gesetztes TEMPLATE respektieren
+  if [[ -n "$TEMPLATE" ]]; then
+    local tstore="${TEMPLATE%%:*}"
+    if pveam list "$tstore" 2>/dev/null | grep -q "$(basename "$TEMPLATE")"; then return 0; fi
   fi
-  msg "Lade Debian-13-Template ..."
+  # 2) vorhandenes Debian-13-Template auf irgendeinem Storage suchen
+  local store t
+  while read -r store; do
+    t=$(pveam list "$store" 2>/dev/null | grep -o 'debian-13-standard[^ ]*amd64.tar.zst' | head -1)
+    if [[ -n "$t" ]]; then TEMPLATE="$store:vztmpl/$t"; echo "Template gefunden: $TEMPLATE"; return 0; fi
+  done < <(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}')
+  # 3) sonst laden (bevorzugt local, sonst erstes vztmpl-Storage)
+  local dlstore
+  dlstore=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -x local || pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | head -1)
+  if [[ -z "$dlstore" ]]; then echo "FEHLER: kein Storage mit Content 'vztmpl'. pvesm status pruefen." >&2; exit 1; fi
+  msg "Lade Debian-13-Template auf '$dlstore' ..."
   pveam update || true
-  pveam download local "$(basename "$TEMPLATE")" || pveam download local "$(basename "$TEMPLATE_FALLBACK")"
-  TEMPLATE="local:vztmpl/$(basename "$TEMPLATE")"
+  pveam download "$dlstore" debian-13-standard_13.0-1_amd64.tar.zst \
+    || pveam download "$dlstore" debian-13-standard_13.1-2_amd64.tar.zst
+  t=$(pveam list "$dlstore" 2>/dev/null | grep -o 'debian-13-standard[^ ]*amd64.tar.zst' | head -1)
+  TEMPLATE="$dlstore:vztmpl/$t"
+}
+
+pick_storage(){
+  # explizit gesetztes, aktives Storage respektieren
+  if [[ -n "$STORAGE" ]] && pvesm status --content rootdir 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -qx "$STORAGE"; then return 0; fi
+  [[ -n "$STORAGE" ]] && echo "Storage '$STORAGE' nicht (mehr) aktiv - suche Ersatz ..."
+  local cand
+  cand=$(pvesm status --content rootdir 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | head -1)
+  if [[ -z "$cand" ]]; then echo "FEHLER: kein aktives Storage mit Content 'rootdir'. pvesm status pruefen." >&2; pvesm status >&2 || true; exit 1; fi
+  [[ "${STORAGE:-}" != "$cand" ]] && echo "Nutze Storage: $cand"
+  STORAGE="$cand"
+}
+
+resolve_ct(){
+  # Gibt UPDATE=1 zurueck wenn unser CT schon existiert, sonst naechsten freien CTID
+  if ct_exists; then
+    local hn
+    hn=$(pct config "$CTID" 2>/dev/null | awk -F': ' '/^hostname:/{print $2}')
+    if [[ "$hn" == "$CT_HOSTNAME" ]]; then
+      UPDATE=1
+      msg "CT $CTID ($CT_HOSTNAME) existiert bereits -> Update-Pfad (idempotent)."
+      return 0
+    fi
+    echo "CT $CTID ist belegt ('$hn', nicht unserer) -> suche naechsten freien CTID ..."
+  fi
+  UPDATE=0
+  local id=$CTID
+  while pct status "$id" &>/dev/null; do id=$((id+1)); done
+  if [[ "$id" != "$CTID" ]]; then echo "Neuer CTID: $id (statt $CTID)"; fi
+  CTID=$id
 }
 
 ct_exists(){ pct status "$CTID" &>/dev/null; }
 
 create_ct(){
-  if ct_exists; then msg "CT $CTID existiert bereits -> Update-Pfad (idempotent)."; return 0; fi
+  if [[ "${UPDATE:-0}" == "1" ]]; then return 0; fi
+  pick_storage
   pick_template
-  msg "Erstelle CT $CTID ($HOSTNAME) ..."
+  msg "Erstelle CT $CTID ($CT_HOSTNAME) auf Storage '$STORAGE' ..."
   local net0
   if [[ "$IPV4" == "dhcp" ]]; then
     net0="name=eth0,bridge=${BRIDGE},ip=dhcp,ip6=auto"
@@ -92,7 +137,7 @@ create_ct(){
     net0="name=eth0,bridge=${BRIDGE},ip=${IPV4},gw=${GW},ip6=auto"
   fi
   pct create "$CTID" "$TEMPLATE" \
-    --hostname "$HOSTNAME" \
+    --hostname "$CT_HOSTNAME" \
     --cores "$CORES" --memory "$MEMORY" --swap "$SWAP" \
     --rootfs "${STORAGE}:${DISK_SIZE}" \
     --net0 "$net0" \
@@ -170,6 +215,8 @@ verify(){
 
 main(){
   require_root
+  echo "heimgrund-Installer v$INSTALLER_VERSION (CTID-Wunsch: $CTID)"
+  resolve_ct
   create_ct
   # Falls REPO leer/Platzhalter ist, Hinweis (trotzdem per pct push nutzbar)
   if [[ -z "$REPO" || "$REPO" == *"USER/"* ]]; then
