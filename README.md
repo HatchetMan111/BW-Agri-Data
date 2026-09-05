@@ -4,9 +4,20 @@ Lokale App auf Basis `daten-bw.de / groups=agri` (Geoportal BW, LUBW, InVeKoS LP
 Bodenschätzung, AWGN, Biosphäre). 1 LXC, 1 App, 2 Module. Kein Cloud-Zwang:
 ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 
-- **Stack:** Python 3.11+ / FastAPI / Uvicorn / SQLite (Stdlib), Vanilla-JS Single-File UI (kein Node-Build im LXC)
+- **Stack:** Python 3.11+ / FastAPI / Uvicorn / SQLite (Stdlib), Vanilla-JS + Leaflet-Karte (CDN, mit Offline-Fallback)
 - **Port:** `8000` (via `APP_PORT` änderbar)
 - **LXC-Default:** Debian 13 unprivileged, 2 vCPU, 2 GB RAM, 12 GB Disk, `onboot: 1`
+
+## Was die App zeigt (alles live, alles gecacht)
+
+| Modul | Echte Datenquelle |
+|---|---|
+| 🌍 Boden | SoilGrids (ISRIC): Bodenart, Sand/Schluff/Ton-Balken, pH, Humus, Garten-Score |
+| 🌤️ Wetter | Open-Meteo: aktuell + 4-Tage-Vorhersage, Höhenmeter |
+| 💧 Pegel | PEGELONLINE: 3 nächste Pegel mit aktuellem Stand, 24h-Trend, Verlaufskurve |
+| 🦋 Umfeld | OpenStreetMap: Schutzgebiete im Umkreis (mit Karte), Landnutzung (Acker/Wald/…) |
+| 🔎 Suche | Nominatim-Adresssuche + Klick auf Karte statt Koordinaten-Tippen |
+| 🌱 Garten | Gieß-Empfehlung aus echtem Regen + Boden + Saison |
 
 ## Einzeiler (Proxmox-Host als root)
 
