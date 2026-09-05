@@ -70,6 +70,7 @@ svg.spark{width:100%;height:56px;display:block}
 <nav>
 <button id="tabA" class="active" onclick="show('A')">Grundstück</button>
 <button id="tabB" onclick="show('B')">Garten</button>
+<button id="tabD" onclick="show('D')">🚜 Acker-Test</button>
 <button id="tabC" onclick="show('C')">Beete</button>
 </nav>
 <main>
@@ -105,6 +106,14 @@ svg.spark{width:100%;height:56px;display:block}
 </div>
 </section>
 
+<section id="secD" style="display:none">
+<div class="card"><h3>🚜 Landwirtschafts-Eignungstest</h3>
+<p class="small">Boden 35 % · Klima 20 % · Hang 20 % · Umfeld 15 % · Schutz 10 % — aus echten Daten (SoilGrids, ERA5-Klima 2020–24, Höhenmodell, OSM). Übernimmt die Koordinaten aus „Grundstück“.</p>
+<button class="primary" onclick="checkAgri()">Acker-Test starten</button>
+</div>
+<div id="agriOut"></div>
+</section>
+
 <section id="secC" style="display:none">
 <div class="card"><h3>➕ Beet anlegen</h3>
 <label>Name</label><input id="beetName" placeholder="z. B. Hochbeet Nord">
@@ -132,11 +141,12 @@ async function j(url, opt){
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(x){
-  for(const k of ["A","B","C"]){
+  for(const k of ["A","B","C","D"]){
     document.getElementById("sec"+k).style.display = (k===x?"block":"none");
     document.getElementById("tab"+k).classList.toggle("active", k===x);
   }
   if(x==="C") loadBeete();
+  if(x==="D" && !document.getElementById("agriOut").innerHTML) checkAgri();
   if(x==="A" && map) setTimeout(()=>map.invalidateSize(), 50);
 }
 function osmUrl(lat, lon){ return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`; }
@@ -277,6 +287,43 @@ function renderGarten(e){
     <div class="tip">💧 ${esc(e.giess_empfehlung||"–")}</div>
     ${e.boden_einschaetzung?`<p class="small">🌍 ${esc(e.boden_einschaetzung)}</p>`:""}
     ${e.wetter?`<p class="small">Aktuell: ${e.wetter.icon} ${e.wetter.temp} °C, 💧 ${e.wetter.feuchte} %</p>`:""}`;
+}
+async function checkAgri(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("agriOut");
+  box.innerHTML = '<div class="card loading">Berechne Boden, Klima (5 Jahre), Hang … (dauert beim ersten Mal ~20 s, danach aus Cache)</div>';
+  try{
+    box.innerHTML = renderAgri(await j(`/api/agri/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`));
+  }catch(err){ box.innerHTML = `<div class="err">Acker-Test fehlgeschlagen: ${esc(err.message)}</div>`; }
+}
+function scoreColor(s){
+  if(s==null) return "#888";
+  return s>=80 ? "#2f7d4f" : s>=65 ? "#7ab54a" : s>=50 ? "#a97b1f" : "#b53a3a";
+}
+function renderAgri(a){
+  const col = scoreColor(a.score);
+  const faktorNamen = {boden:"🌍 Boden (35 %)", klima:"🌤️ Klima (20 %)", hang:"⛰️ Hang (20 %)", umfeld:"🚜 Umfeld (15 %)", schutz:"🦋 Schutz (10 %)"};
+  const bars = Object.entries(a.faktoren||{}).map(([k,f])=>`
+    <div><span class="small"><b>${faktorNamen[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
+    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
+    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const kult = (a.kulturen||[]).map(k=>{
+    const b = k.status==="geeignet" ? "ok" : k.status==="bedingt" ? "warn" : "bad";
+    const ic = k.status==="geeignet" ? "✅" : k.status==="bedingt" ? "⚠️" : "🛑";
+    return `<li>${ic} <b>${esc(k.kultur)}</b> <span class="badge ${b}">${esc(k.status)}</span><br><span class="small">${esc(k.grund)}</span></li>`;
+  }).join("");
+  return `
+  ${a.ko_kriterium?`<div class="card"><div class="warnbox">🛑 <b>K.O.:</b> ${esc(a.ko_kriterium)}</div></div>`:""}
+  <div class="card" style="text-align:center">
+    <div class="bignum" style="color:${col};font-size:52px">${a.score==null?"?":a.score}<span class="small">/100</span></div>
+    <div><span class="badge ${a.score>=65?"ok":a.score>=50?"warn":"bad"}">${esc(a.label)}</span>
+    <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span></div>
+  </div>
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  <div class="card"><h3>🌾 Kultur-Eignung</h3><ul class="clean">${kult}</ul>
+  <p class="small">Regelwerk transparent im Code (kulturmatrix). LPIS-Feldblock-Prüfung folgt als WFS-Punktabfrage.</p></div>
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(a,null,2))}</pre></details>`;
 }
 async function save(){
   const label = document.getElementById("q").value.trim() || "Standort";
