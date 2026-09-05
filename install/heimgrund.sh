@@ -109,6 +109,9 @@ resolve_ct(){
   if ct_exists; then
     local hn
     hn=$(pct config "$CTID" 2>/dev/null | awk -F': ' '/^hostname:/{print $2}')
+    if [[ -z "$hn" ]] && pct exec "$CTID" -- test -d /opt/heimgrund 2>/dev/null; then
+      hn="$CT_HOSTNAME"   # Hostname nicht lesbar, aber unsere App ist drin
+    fi
     if [[ "$hn" == "$CT_HOSTNAME" ]]; then
       UPDATE=1
       msg "CT $CTID ($CT_HOSTNAME) existiert bereits -> Update-Pfad (idempotent)."
@@ -139,7 +142,7 @@ create_ct(){
   pct create "$CTID" "$TEMPLATE" \
     --hostname "$CT_HOSTNAME" \
     --cores "$CORES" --memory "$MEMORY" --swap "$SWAP" \
-    --rootfs "${STORAGE}:${DISK_SIZE}" \
+    --rootfs "${STORAGE}:${DISK_SIZE%[Gg]}" \
     --net0 "$net0" \
     --nameserver "$DNS" --searchdomain "lan" \
     --unprivileged 1 --onboot 1 --start 1 \
