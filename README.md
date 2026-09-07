@@ -20,6 +20,8 @@ ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 | 🌱 Garten | Gieß-Empfehlung aus echtem Regen + Boden + Saison |
 | 🚜 Acker-Test | Eignungs-Score (Boden 35 / Klima 20 / Hang 20 / Umfeld 15 / Schutz 10) + Kulturmatrix für Weizen, Mais, Kartoffel, Grünland, Streuobst, Wein — Klima aus ERA5 2020–24, Hang aus Höhenmodell |
 | 🏛️ Behörden-Check | Punktabfrage (±50 m) in LUBW-Fachdaten: NSG, FFH, LSG, WSG, FFH-Mähwiesen, Überschwemmungsgebiete — mit Gebietsnamen |
+| 🏗️ Bau-Check | Erwerbs-Einschätzung: K.O. (ÜSG/NSG/FFH), Denkmalschutz (LAD live), Lärm-Abstände, Starkregentage (ERA5), Hang, Lage-Score (Bus/Bahn/Einkauf/Schule/Arzt) + Kauf-Checkliste |
+| 🌲 Wald | Waldanteil + Laub/Nadel (OSM), Klimafitness, Sturmsicherheit, Boden-Hinweis |
 
 ## Einzeiler (Proxmox-Host als root)
 

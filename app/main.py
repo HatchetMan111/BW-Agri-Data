@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.5.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -316,41 +316,93 @@ def pegel_live(lat: float, lon: float) -> dict:
 
 
 def osm_live(lat: float, lon: float) -> dict:
-    ckey = f"osm:{round(lat,2)}:{round(lon,2)}"
+    ckey = f"osm2:{round(lat,2)}:{round(lon,2)}"
     hit = cache_get(ckey, 30 * 86400)
     if hit is not None:
         hit["cached"] = True
         return hit
-    q = (f"[out:json][timeout:25];"
-         f"(relation[\"boundary\"~\"^(national_park|nature_reserve|protected_area)$\"]"
-         f"(around:15000,{lat},{lon});"
-         f"way[\"leisure\"=\"nature_reserve\"](around:15000,{lat},{lon});"
-         f"way[\"landuse\"~\"^(farmland|meadow|orchard|forest|vineyard|allotments)$\"]"
-         f"(around:3000,{lat},{lon}););out tags center 40;")
-    data, err = fetch_json("https://overpass-api.de/api/interpreter", timeout=35,
+    stmts = [
+        "(relation[\"boundary\"~\"^(national_park|nature_reserve|protected_area)$\"]"
+        f"(around:15000,{lat},{lon});"
+        f"way[\"leisure\"=\"nature_reserve\"](around:15000,{lat},{lon}););out tags center 40;",
+        f"way[\"landuse\"~\"^(farmland|meadow|orchard|forest|vineyard|allotments)$\"]"
+        f"(around:3000,{lat},{lon});out tags center 60;",
+        "(node[\"waterway\"~\"^(river|stream|canal)$\"]"
+        f"(around:3000,{lat},{lon});"
+        f"way[\"waterway\"~\"^(river|stream|canal)$\"](around:3000,{lat},{lon}););out tags center 30;",
+        f"way[\"highway\"~\"^(motorway|trunk)$\"](around:3000,{lat},{lon});out tags center 10;",
+        f"way[\"railway\"~\"^(rail|light_rail)$\"](around:3000,{lat},{lon});out tags center 10;",
+        "(node[\"highway\"=\"bus_stop\"]"
+        f"(around:3000,{lat},{lon}););out tags center 40;",
+        "(node[\"railway\"~\"^(station|halt)$\"]"
+        f"(around:5000,{lat},{lon}););out tags center 10;",
+        "(node[\"shop\"=\"supermarket\"]"
+        f"(around:3000,{lat},{lon});"
+        f"node[\"amenity\"~\"^(school|kindergarten|doctors|pharmacy)$\"]"
+        f"(around:3000,{lat},{lon}););out tags center 60;",
+    ]
+    q = "[out:json][timeout:40];" + "".join(stmts)
+    data, err = fetch_json("https://overpass-api.de/api/interpreter", timeout=60,
                            data=q.encode("utf-8"))
     if data is None:
         return {"status": "offline", "error": err, "quelle": "OpenStreetMap (nicht erreichbar)"}
     try:
         reservate, nutzung = [], {}
+        gewaesser, wald_types = [], []
+        d_autobahn, d_bahn = [], []
+        pois: dict[str, list] = {}
         for e in data.get("elements", []):
             tags = e.get("tags", {})
-            c = e.get("center", {})
+            c = e.get("center") or ({"lat": e["lat"], "lon": e["lon"]}
+                                    if "lat" in e else None)
             if not c:
                 continue
             d = haversine_km(lat, lon, c["lat"], c["lon"])
             if tags.get("boundary") in ("national_park", "nature_reserve", "protected_area") \
                     or tags.get("leisure") == "nature_reserve":
-                name = tags.get("name") or "Naturschutzflaeche"
-                reservate.append({"name": name, "dist_km": round(d, 1),
-                                  "lat": c["lat"], "lon": c["lon"]})
+                reservate.append({"name": tags.get("name") or "Naturschutzflaeche",
+                                  "dist_km": round(d, 1), "lat": c["lat"], "lon": c["lon"]})
+            elif tags.get("landuse") == "forest":
+                lt = tags.get("leaf_type", "?")
+                wald_types.append(lt)
+                nutzung["forest"] = nutzung.get("forest", 0) + 1
             elif tags.get("landuse"):
                 nutzung[tags["landuse"]] = nutzung.get(tags["landuse"], 0) + 1
+            elif tags.get("waterway") in ("river", "stream", "canal"):
+                if tags.get("name"):
+                    gewaesser.append({"name": tags["name"], "typ": tags["waterway"],
+                                      "dist_km": round(d, 1)})
+            elif tags.get("highway") in ("motorway", "trunk"):
+                d_autobahn.append(d)
+            elif tags.get("railway") in ("rail", "light_rail"):
+                d_bahn.append(d)
+            elif tags.get("highway") == "bus_stop":
+                pois.setdefault("bushalt", []).append(d)
+            elif tags.get("railway") in ("station", "halt"):
+                pois.setdefault("bahnhof", []).append(d)
+            elif tags.get("shop") == "supermarket":
+                pois.setdefault("supermarkt", []).append(d)
+            elif tags.get("amenity") in ("school", "kindergarten", "doctors", "pharmacy"):
+                pois.setdefault(tags["amenity"], []).append(d)
         reservate.sort(key=lambda r: r["dist_km"])
+        gewaesser.sort(key=lambda r: r["dist_km"])
+        seen, gw_eindeutig = set(), []
+        for g in gewaesser:
+            if g["name"] not in seen:
+                seen.add(g["name"])
+                gw_eindeutig.append(g)
+        from collections import Counter as _C
+        wald = dict(_C(wald_types))
+        poi_min = {k: round(min(v), 1) for k, v in pois.items() if v}
         out = {"status": "live", "quelle": "OpenStreetMap (ODbL)", "cached": False,
                "reservate": reservate[:8],
                "landnutzung": [{"typ": landuse_de(k), "treffer": v}
-                               for k, v in sorted(nutzung.items(), key=lambda i: -i[1])][:5]}
+                               for k, v in sorted(nutzung.items(), key=lambda i: -i[1])][:6],
+               "gewaesser": gw_eindeutig[:5],
+               "autobahn_km": round(min(d_autobahn), 1) if d_autobahn else None,
+               "bahn_km": round(min(d_bahn), 1) if d_bahn else None,
+               "wald": {"typen": wald, "treffer": len(wald_types)},
+               "pois": poi_min}
         cache_put(ckey, out)
         return out
     except Exception as e:  # noqa: BLE001
@@ -512,9 +564,11 @@ def climate_live(lat: float, lon: float) -> dict:
         temp = sum(sum(v[0]) / len(v[0]) for v in years.values()) / nj
         frost = sum(v[2] for v in years.values()) / nj
         hitze = sum(v[3] for v in years.values()) / nj
+        stark = sum(1 for v in years.values() for x in v[1] if x >= 20) / nj
         out = {"status": "live", "quelle": "Open-Meteo ERA5 (CC-BY 4.0, 2020-2024)", "cached": False,
                "niederschlag_mm_jahr": round(nied), "temp_mittel_c": round(temp, 1),
-               "frosttage_jahr": round(frost), "hitzetage_jahr": round(hitze)}
+               "frosttage_jahr": round(frost), "hitzetage_jahr": round(hitze),
+               "starkregentage_jahr": round(stark, 1)}
         cache_put(ckey, out)
         return out
     except Exception as e:  # noqa: BLE001
@@ -658,6 +712,197 @@ def kulturmatrix(boden: dict, klima: dict, hang: dict) -> list[dict]:
     ]
 
 
+LAD_WMS = ("https://owsproxy.lgl-bw.de/owsproxy/ows/"
+           "WMS_LAD_Kulturdenkmale_Bau_Kunstdenkmalpflege")
+LAD_LAYER = [("v_bau_kunstdenkmalpflege_kulturdenkmale", "Kulturdenkmal"),
+             ("v_bau_kunstdenkmalpflege_gesamtanlagen", "Gesamtanlage")]
+
+
+def _lad_gfi(layer: str, label: str, lat: float, lon: float) -> dict:
+    import re as _re
+    d = 0.0012  # ~130 m Box
+    params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
+              "LAYERS": layer, "QUERY_LAYERS": layer, "CRS": "EPSG:4326",
+              "BBOX": f"{lat-d},{lon-d},{lat+d},{lon+d}", "WIDTH": 10, "HEIGHT": 10,
+              "I": 5, "J": 5, "FORMAT": "image/png", "INFO_FORMAT": "text/plain"}
+    try:
+        full = LAD_WMS + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(full, headers=UA)
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            txt = resp.read().decode("utf-8", "ignore")
+    except Exception as e:  # noqa: BLE001
+        return {"label": label, "status": "offline", "error": f"{type(e).__name__}: {e}"}
+    if "ServiceException" in txt or "Results for FeatureType" not in txt:
+        return {"label": label, "status": "live", "treffer": False}
+    infos = _re.findall(r"info\s*=\s*(.{20,400})", txt)
+    kurz = " … ".join(i.strip().replace("\n", " ")[:220] for i in infos[:2])
+    return {"label": label, "status": "live", "treffer": True,
+            "beschreibung": kurz or "Denkmalobjekt in der Naehe (Details beim LAD erfragen)"}
+
+
+def denkmal_live(lat: float, lon: float) -> dict:
+    ckey = f"denk:{round(lat,3)}:{round(lon,3)}"
+    hit = cache_get(ckey, 30 * 86400)
+    if hit is not None:
+        hit["cached"] = True
+        return hit
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        res = [ex.submit(_lad_gfi, layer, label, lat, lon).result()
+               for layer, label in LAD_LAYER]
+    out = {"status": "live" if any(r["status"] == "live" for r in res) else "offline",
+           "quelle": "LAD BW via LGL-owsproxy (WMS)", "cached": False, "objekte": res}
+    cache_put(ckey, out)
+    return out
+
+
+def _dist_score(km: float | None, gut: float, mittel: float) -> int:
+    if km is None:
+        return 50
+    return 100 if km <= gut else 70 if km <= mittel else 30
+
+
+def bau_test(lat: float, lon: float) -> dict:
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        f_amt = ex.submit(schutz_amtlich, lat, lon)
+        f_denk = ex.submit(denkmal_live, lat, lon)
+        f_osm = ex.submit(osm_live, lat, lon)
+        f_klim = ex.submit(climate_live, lat, lon)
+        f_hang = ex.submit(slope_live, lat, lon)
+        f_bod = ex.submit(soil_live, lat, lon)
+        amt, denk, osm = f_amt.result(), f_denk.result(), f_osm.result()
+        klim, hang, bod = f_klim.result(), f_hang.result(), f_bod.result()
+
+    ko, gelb = [], []
+    if amt.get("status") == "live":
+        for x in amt["layer"]:
+            if x.get("treffer") and x["stufe"] == "rot":
+                ko.append(f"{x['label']}: {(x.get('namen') or ['Treffer'])[0]}")
+            elif x.get("treffer"):
+                gelb.append(f"{x['label']}: {(x.get('namen') or ['Treffer'])[0]}")
+    denkmal_treffer = [o for o in denk.get("objekte", []) if o.get("treffer")]
+    if denkmal_treffer:
+        gelb.append("Denkmalschutz: " + "; ".join(
+            f"{o['label']} ({(o.get('beschreibung') or '')[:80]}…)" for o in denkmal_treffer))
+
+    # Laerm aus Abstaenden (OSM-Proxy, landesweit)
+    ab, bb = osm.get("autobahn_km"), osm.get("bahn_km")
+    laerm = min(_dist_score(ab, 1.0, 2.5), _dist_score(bb, 0.5, 1.5))
+    laerm_txt = f"Autobahn {ab if ab is not None else '?'} km · Bahn {bb if bb is not None else '?'} km"
+    if laerm < 50:
+        gelb.append("Laerm: Hauptverkehrsader in Hoerweite – Lärmkartierung/Stadtklima pruefen")
+
+    # Starkregen aus ERA5 + Hang
+    stark = klim.get("starkregentage_jahr")
+    hp = hang.get("hang_pct")
+    regen = None
+    if stark is not None:
+        regen = 90 if stark < 3 else 65 if stark < 6 else 35
+        if hp is not None and hp >= 7 and stark >= 3:
+            gelb.append(f"Starkregen ({stark}/Jahr Tage ≥20 mm) + Hang {hp} %: Erosion/Rueckstau beachten")
+    regen_txt = (f"{stark} Starkregentage/Jahr (ERA5 2020–24)" if stark is not None
+                 else "Klimadaten offline")
+
+    # Hang/Baugrund
+    if hp is not None:
+        hang_w = 100 if hp < 4 else 80 if hp < 7 else 50 if hp < 12 else 20
+        hang_txt = f"{hp} % ({hang.get('hang_klasse')})"
+        if hp >= 12:
+            gelb.append(f"Steilhang {hp} %: Stuetzmauern, Zufahrt, Baukosten!")
+    else:
+        hang_w, hang_txt = None, "Hangdaten offline"
+
+    # Lage aus POIs
+    pois = osm.get("pois", {}) if osm.get("status") == "live" else {}
+    lage_einzel = {"Bushalt": _dist_score(pois.get("bushalt"), 0.4, 1.0),
+                   "Bahnhof": _dist_score(pois.get("bahnhof"), 1.5, 4.0),
+                   "Supermarkt": _dist_score(pois.get("supermarkt"), 1.0, 2.5),
+                   "Schule/Kita": _dist_score(pois.get("school", pois.get("kindergarten")), 1.0, 2.5),
+                   "Arzt": _dist_score(pois.get("doctors"), 2.0, 5.0)}
+    lage = round(sum(lage_einzel.values()) / len(lage_einzel))
+
+    faktoren = {"schutz": {"gewicht": 30,
+                           "wert": 20 if ko else (65 if gelb else 100),
+                           "text": ("K.O.: " + "; ".join(ko)) if ko else (
+                               "Auflagen: " + "; ".join(gelb[:3]) if gelb
+                               else "Keine Schutzgebiets-Treffer")},
+                "laerm": {"gewicht": 20, "wert": laerm, "text": laerm_txt},
+                "starkregen": {"gewicht": 15, "wert": regen, "text": regen_txt},
+                "hang": {"gewicht": 15, "wert": hang_w, "text": hang_txt},
+                "lage": {"gewicht": 20, "wert": lage,
+                         "text": ", ".join(f"{k} {pois.get({'Bushalt':'bushalt','Bahnhof':'bahnhof','Supermarkt':'supermarkt','Schule/Kita':'school','Arzt':'doctors'}[k], '?')} km"
+                                         for k in lage_einzel)}}
+    aktiv = {k: v for k, v in faktoren.items() if v["wert"] is not None}
+    score = round(sum(v["wert"] * v["gewicht"] for v in aktiv.values())
+                  / sum(v["gewicht"] for v in aktiv.values())) if aktiv else None
+    ampel = "rot" if ko else ("gelb" if (score is not None and score < 70) or gelb else "gruen")
+    return {"lat": lat, "lon": lon, "score": score, "ampel": ampel,
+            "ko_kriterien": ko, "auflagen": gelb, "faktoren": faktoren,
+            "denkmal": denk.get("objekte", []) if denk.get("status") == "live" else [],
+            "quellen": {"schutz": amt.get("quelle"), "denkmal": denk.get("quelle"),
+                        "lage": osm.get("quelle"), "klima": klim.get("quelle")}}
+
+
+def wald_test(lat: float, lon: float) -> dict:
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        f_osm = ex.submit(osm_live, lat, lon)
+        f_klim = ex.submit(climate_live, lat, lon)
+        f_hang = ex.submit(slope_live, lat, lon)
+        f_bod = ex.submit(soil_live, lat, lon)
+        osm, klim, hang, bod = (f_osm.result(), f_klim.result(),
+                                f_hang.result(), f_bod.result())
+
+    w = osm.get("wald", {}) if osm.get("status") == "live" else {}
+    typen = w.get("typen", {})
+    total_w = sum(typen.values())
+    laub = typen.get("broadleaved", 0) + typen.get("broadleaf", 0)
+    nadel = typen.get("needleleaved", 0) + typen.get("needleleaf", 0)
+    gemischt = total_w - laub - nadel
+    anteil_txt = (f"Waldwege im Umfeld: {total_w} (Laub {laub}, Nadel {nadel}, gemischt/unbekannt {gemischt})"
+                  if total_w else "Kein Wald im OSM-Umfeld (3 km) erfasst")
+
+    potenzial = 90 if total_w >= 10 else 70 if total_w >= 3 else (40 if total_w else 10)
+    hinweise = []
+    if not total_w:
+        hinweise.append("Kein Wald am Punkt – Modul eher fuer Waldbesitzer/Standorte mit Wald gedacht.")
+    expo = hang.get("exposition")
+    hp = hang.get("hang_pct")
+    sturm = 50
+    if hp is not None and expo:
+        sturm = 85 if hp < 5 else (60 if expo not in ("W", "SW", "NW") else 35)
+        if sturm <= 40:
+            hinweise.append(f"Sturmwurf achten: Hang {hp} % in {expo}-Lage + Nadelanteil – "
+                            "Bestandsraender und Einzelstämme nach Stuermen kontrollieren.")
+    klima_fit, klima_txt = None, "Klimadaten offline"
+    if klim.get("status") == "live":
+        klima_fit = _score_band(klim["niederschlag_mm_jahr"], 700, 1000, 350)
+        klima_fit -= min(20, max(0, klim["hitzetage_jahr"] - 10))
+        klima_fit = round(max(5, klima_fit))
+        klima_txt = (f"{klim['niederschlag_mm_jahr']} mm/Jahr · {klim['hitzetage_jahr']} Hitzetage – "
+                     + ("Trockenstress beachten (Buche/Fichte), Eiche/Douglasie robuster."
+                        if klim["hitzetage_jahr"] > 12 else "Wasserversorgung unkritisch."))
+    if nadel > laub and total_w >= 3:
+        hinweise.append("Nadelbetont: Buchdrucker-Monitoring (Fichte) – Fangzahlen beim Forstamt, "
+                        "befallene Stämme rasch aufarbeiten.")
+    if bod.get("status") == "live" and not bod.get("versiegelt"):
+        hinweise.append(f"Boden: {bod.get('bodenart')} (pH {bod.get('ph')}) – "
+                        + ("Staunaesse-tolerant pflanzen (Erle/Esche) bei schwerem Boden."
+                           if (bod.get("ton_pct") or 0) > 35 else "Gute Wuchsbedingungen."))
+    faktoren = {"waldanteil": {"gewicht": 40, "wert": potenzial, "text": anteil_txt},
+                "klimafitness": {"gewicht": 30, "wert": klima_fit, "text": klima_txt},
+                "sturmsicherheit": {"gewicht": 30, "wert": sturm,
+                                    "text": f"Hang {hp} % {expo}" if hp else "Hangdaten offline"}}
+    aktiv = {k: v for k, v in faktoren.items() if v["wert"] is not None}
+    score = round(sum(v["wert"] * v["gewicht"] for v in aktiv.values())
+                  / sum(v["gewicht"] for v in aktiv.values())) if aktiv else None
+    return {"lat": lat, "lon": lon, "score": score,
+            "label": ("gutes Waldpotenzial" if score is not None and score >= 70
+                      else "mittleres Potenzial" if score is not None and score >= 45
+                      else "geringes Potenzial" if score is not None else "unbestimmt"),
+            "faktoren": faktoren, "hinweise": hinweise,
+            "fva_hinweis": ("FVA-Fachdaten (Bestockung, Sturmwurf-/Käfergefahr) als Karten-Overlay: "
+                            "https://www.fva-bw.de – Punktabfrage folgt, sobald ein offener Dienst verfuegbar ist.")}
+
+
 # ---------------- Modelle ----------------
 class StandortIn(BaseModel):
     label: str = Field(min_length=1, max_length=120)
@@ -745,6 +990,38 @@ def api_agri_test(lat: float = Query(ge=-90, le=90),
     try:
         t0 = time.time()
         out = agri_test(lat, lon)
+        out["in_bw"] = 47.0 <= lat <= 49.9 and 7.4 <= lon <= 10.6
+        out["dauer_s"] = round(time.time() - t0, 1)
+        return out
+    except Exception as e:  # noqa: BLE001
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500,
+                            detail=f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=5)}")
+
+
+@app.get("/api/bau/test")
+def api_bau_test(lat: float = Query(ge=-90, le=90),
+                 lon: float = Query(ge=-180, le=180)) -> dict:
+    """Grundstueck-Erwerb-Einschaetzung (Schutz 30 / Laerm 20 / Starkregen 15 / Hang 15 / Lage 20)."""
+    try:
+        t0 = time.time()
+        out = bau_test(lat, lon)
+        out["in_bw"] = 47.0 <= lat <= 49.9 and 7.4 <= lon <= 10.6
+        out["dauer_s"] = round(time.time() - t0, 1)
+        return out
+    except Exception as e:  # noqa: BLE001
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500,
+                            detail=f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=5)}")
+
+
+@app.get("/api/wald/test")
+def api_wald_test(lat: float = Query(ge=-90, le=90),
+                  lon: float = Query(ge=-180, le=180)) -> dict:
+    """Waldpotenzial (Anteil 40 / Klimafitness 30 / Sturmsicherheit 30)."""
+    try:
+        t0 = time.time()
+        out = wald_test(lat, lon)
         out["in_bw"] = 47.0 <= lat <= 49.9 and 7.4 <= lon <= 10.6
         out["dauer_s"] = round(time.time() - t0, 1)
         return out

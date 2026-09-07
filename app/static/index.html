@@ -69,8 +69,10 @@ svg.spark{width:100%;height:56px;display:block}
 </header>
 <nav>
 <button id="tabA" class="active" onclick="show('A')">Grundstück</button>
+<button id="tabF" onclick="show('F')">🏗️ Bau-Check</button>
 <button id="tabB" onclick="show('B')">Garten</button>
 <button id="tabD" onclick="show('D')">🚜 Acker-Test</button>
+<button id="tabG" onclick="show('G')">🌲 Wald</button>
 <button id="tabC" onclick="show('C')">Beete</button>
 <button id="tabE" onclick="show('E')">❓ Begriffe</button>
 </nav>
@@ -115,6 +117,23 @@ svg.spark{width:100%;height:56px;display:block}
 <div id="agriOut"></div>
 </section>
 
+<section id="secF" style="display:none">
+<div class="card"><h3>🏗️ Grundstück-Erwerb-Einschätzung</h3>
+<p class="small">K.O.-Check (ÜSG/NSG/FFH) · Denkmalschutz (LAD) · Lärm-Abstände · Starkregen · Hang · Lage (ÖPNV/Einkauf/Schule/Arzt). Übernimmt die Koordinaten aus „Grundstück“.</p>
+<button class="primary" onclick="checkBau()">Bau-Check starten</button>
+</div>
+<div id="bauOut"></div>
+<div class="card"><h3>📋 Kauf-Checkliste (wird lokal gespeichert)</h3><ul id="baucheck" class="clean"></ul></div>
+</section>
+
+<section id="secG" style="display:none">
+<div class="card"><h3>🌲 Wald-Potenzial</h3>
+<p class="small">Waldanteil + Laub/Nadel (OSM), Klimafitness (ERA5), Sturmsicherheit (Hang/Exposition), Boden-Hinweis. FVA-Karten als Overlay-Link.</p>
+<button class="primary" onclick="checkWald()">Wald-Check starten</button>
+</div>
+<div id="waldOut"></div>
+</section>
+
 <section id="secE" style="display:none">
 <div class="card"><h3>❓ Fachbegriffe einfach erklärt</h3>
 <p class="small">Alle Begriffe, die in den Ergebnissen vorkommen — in normalem Deutsch, mit Tipp was zu tun ist.</p>
@@ -150,13 +169,15 @@ async function j(url, opt){
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function show(x){
-  for(const k of ["A","B","C","D","E"]){
+  for(const k of ["A","B","C","D","E","F","G"]){
     document.getElementById("sec"+k).style.display = (k===x?"block":"none");
     document.getElementById("tab"+k).classList.toggle("active", k===x);
   }
   if(x==="C") loadBeete();
   if(x==="D" && !document.getElementById("agriOut").innerHTML) checkAgri();
   if(x==="E" && !document.getElementById("glosOut").innerHTML) renderGlos("");
+  if(x==="F" && !document.getElementById("bauOut").innerHTML) checkBau();
+  if(x==="G" && !document.getElementById("waldOut").innerHTML) checkWald();
   if(x==="A" && map) setTimeout(()=>map.invalidateSize(), 50);
 }
 function osmUrl(lat, lon){ return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`; }
@@ -374,6 +395,91 @@ function renderGlos(filter){
     return `<div class="card"><h3>${esc(gruppe)}</h3><ul class="clean">${treffer.map(([t,e])=>`<li><b>${esc(t)}</b><br><span class="small">${esc(e)}</span></li>`).join("")}</ul></div>`;
   }).join("");
   document.getElementById("glosOut").innerHTML = html || '<div class="card"><p class="small">Nichts gefunden – anderen Suchbegriff versuchen.</p></div>';
+}
+const BAUCHECK = [
+["Baulastenverzeichnis", "Beim Bauamt: Lasten auf dem Flurstück (Leitungen, Wege-, Abstandsflächen)?"],
+["Bebauungsplan / §34 BauGB", "Was darf gebaut werden (Geschosse, Dach, GRZ)? Liegt ein B-Plan vor oder Innenbereich?"],
+["Erschließung", "Wasser, Abwasser, Strom, Glasfaser, Straße – alles am Grundstück und bezahlt?"],
+["Bodenrichtwert / Kaufpreis", "BORIS-BW beim Gutachterausschuss vergleichen – passt der Preis zur Lage?"],
+["Altlasten-Auskunft", "Beim Landratsamt nach Altlastenkataster fragen (Tankstelle, Gewerbe-Vornutzung)?"],
+["Wasserbehörde", "ÜSG/WSG-Bescheid einholen, wenn der Behörden-Check Treffer zeigt."],
+["Denkmalschutz", "Bei Treffer: LAD/RP kontaktieren – was ist genehmigungspflichtig?"],
+["Baugrundgutachten", "Vor Kauf: Bodengutachten (Tragfähigkeit, Grundwasser) – spart böse Überraschungen."],
+["Versicherung", "Elementarschaden-Versicherung anfragen (Starkregen/Hochwasser beachten)."],
+["Nachbarn & Lärm", "Zu verschiedenen Zeiten vorbeifahren: Bahn, Straße, Gewerbe, Nachtleben?"],
+];
+function loadBaucheck(){
+  let done = {};
+  try{ done = JSON.parse(localStorage.getItem("baucheck")||"{}"); }catch(e){}
+  document.getElementById("baucheck").innerHTML = BAUCHECK.map((c,i)=>
+    `<li><label style="display:flex;gap:8px;align-items:flex-start;margin:0;cursor:pointer">
+    <input type="checkbox" style="width:auto;margin-top:4px" ${done[i]?"checked":""} onchange="saveBaucheck(${i},this.checked)">
+    <span><b>${esc(c[0])}</b><br><span class="small">${esc(c[1])}</span></span></label></li>`).join("");
+}
+function saveBaucheck(i, v){
+  let done = {};
+  try{ done = JSON.parse(localStorage.getItem("baucheck")||"{}"); }catch(e){}
+  done[i] = v; localStorage.setItem("baucheck", JSON.stringify(done));
+}
+async function checkBau(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("bauOut");
+  box.innerHTML = '<div class="card loading">Prüfe Schutzgebiete, Denkmal, Lärm, Starkregen, Lage … (erster Abruf ~15 s, danach Cache)</div>';
+  try{ box.innerHTML = renderBau(await j(`/api/bau/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)); }
+  catch(err){ box.innerHTML = `<div class="err">Bau-Check fehlgeschlagen: ${esc(err.message)}</div>`; }
+  loadBaucheck();
+}
+function ampelBadge(a){
+  return a==="gruen" ? '<span class="badge ok">🟢 unauffällig</span>'
+    : a==="gelb" ? '<span class="badge warn">🟡 Auflagen prüfen</span>'
+    : '<span class="badge bad">🔴 K.O. – Bauamt klären</span>';
+}
+function renderBau(b){
+  const fn = {schutz:"🏛️ Schutzgebiete (30 %)", laerm:"🔊 Lärm-Abstände (20 %)", starkregen:"⛈️ Starkregen (15 %)", hang:"⛰️ Hang/Baugrund (15 %)", lage:"🚏 Lage (20 %)"};
+  const bars = Object.entries(b.faktoren||{}).map(([k,f])=>`
+    <div><span class="small"><b>${fn[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
+    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
+    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const ko = (b.ko_kriterien||[]).map(k=>`<div class="warnbox">🛑 <b>K.O.:</b> ${esc(k)}</div>`).join("");
+  const auf = (b.auflagen||[]).map(k=>`<div class="tip">⚠️ ${esc(k)}</div>`).join("");
+  const denk = (b.denkmal||[]).filter(o=>o.treffer).map(o=>`<li>🏛️ <b>${esc(o.label)}</b><br><span class="small">${esc(o.beschreibung||"")}</span></li>`).join("");
+  return `
+  ${ko}
+  <div class="card" style="text-align:center">
+    <div class="bignum" style="color:${scoreColor(b.score)};font-size:52px">${b.score==null?"?":b.score}<span class="small">/100</span></div>
+    <div>${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span></div>
+  </div>
+  ${auf}
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${denk?`<div class="card"><h3>🏛️ Denkmalschutz (LAD, ±130 m)</h3><ul class="clean">${denk}</ul></div>`:""}
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(b,null,2))}</pre></details>`;
+}
+async function checkWald(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("waldOut");
+  box.innerHTML = '<div class="card loading">Analysiere Waldanteil, Klima, Sturm …</div>';
+  try{ box.innerHTML = renderWald(await j(`/api/wald/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)); }
+  catch(err){ box.innerHTML = `<div class="err">Wald-Check fehlgeschlagen: ${esc(err.message)}</div>`; }
+}
+function renderWald(w){
+  const fn = {waldanteil:"🌲 Waldanteil (40 %)", klimafitness:"🌤️ Klimafitness (30 %)", sturmsicherheit:"🌪️ Sturmsicherheit (30 %)"};
+  const bars = Object.entries(w.faktoren||{}).map(([k,f])=>`
+    <div><span class="small"><b>${fn[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
+    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
+    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const hin = (w.hinweise||[]).map(h=>`<div class="tip">💡 ${esc(h)}</div>`).join("");
+  return `
+  <div class="card" style="text-align:center">
+    <div class="bignum" style="color:${scoreColor(w.score)};font-size:52px">${w.score==null?"?":w.score}<span class="small">/100</span></div>
+    <div><span class="badge ${w.score>=70?"ok":w.score>=45?"warn":"bad"}">${esc(w.label)}</span>
+    <span class="small">${esc(w.lat)}, ${esc(w.lon)} · ${w.dauer_s}s</span></div>
+  </div>
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${hin}
+  <p class="small">${esc(w.fva_hinweis||"")}</p>
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(w,null,2))}</pre></details>`;
 }
 async function checkAgri(){
   const lat = document.getElementById("lat").value.trim(),
