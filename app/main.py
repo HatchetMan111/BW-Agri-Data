@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -423,6 +423,8 @@ LUBW_LAYER = [
      "label": "Naturschutzgebiet", "stufe": "rot"},
     {"svc": "FFH_Gebiet", "tn": "FFH_Gebiet:FFH_Gebiet",
      "label": "FFH-Gebiet (Natura 2000)", "stufe": "rot"},
+    {"svc": "Vogelschutzgebiet_SPA", "tn": "Vogelschutzgebiet_SPA:Vogelschutzgebiet_SPA",
+     "label": "Vogelschutzgebiet (SPA)", "stufe": "rot"},
     {"svc": "Landschaftsschutzgebiet", "tn": "Landschaftsschutzgebiet:Landschaftsschutzgebiet",
      "label": "Landschaftsschutzgebiet", "stufe": "gelb"},
     {"svc": "Wasserschutzgebiet", "tn": "Wasserschutzgebiet:Wasserschutzgebiet",
@@ -697,6 +699,7 @@ def agri_test(lat: float, lon: float) -> dict:
     amt_layer = {x["label"]: x for x in amt.get("layer", [])} if amt.get("status") == "live" else {}
     if amt_layer:
         treffer_rot = [k for k in ("Naturschutzgebiet", "FFH-Gebiet (Natura 2000)",
+                                   "Vogelschutzgebiet (SPA)",
                                    "Überschwemmungsgebiet") if amt_layer.get(k, {}).get("treffer")]
         treffer_gelb = [k for k in ("Landschaftsschutzgebiet", "Wasserschutzgebiet",
                                     "FFH-Mähwiese") if amt_layer.get(k, {}).get("treffer")]
@@ -775,11 +778,15 @@ def kulturmatrix(boden: dict, klima: dict, hang: dict) -> list[dict]:
 
 LAD_WMS = ("https://owsproxy.lgl-bw.de/owsproxy/ows/"
            "WMS_LAD_Kulturdenkmale_Bau_Kunstdenkmalpflege")
-LAD_LAYER = [("v_bau_kunstdenkmalpflege_kulturdenkmale", "Kulturdenkmal"),
-             ("v_bau_kunstdenkmalpflege_gesamtanlagen", "Gesamtanlage")]
+LAD_ARCH = ("https://owsproxy.lgl-bw.de/owsproxy/ows/"
+            "WMS_LAD_Archaeologische_Kulturdenkmale_BW")
+LAD_LAYER = [("v_bau_kunstdenkmalpflege_kulturdenkmale", "Kulturdenkmal", LAD_WMS),
+             ("v_bau_kunstdenkmalpflege_gesamtanlagen", "Gesamtanlage", LAD_WMS),
+             ("v_archaeologie_kulturdenkmale", "Archäologie-Denkmal", LAD_ARCH),
+             ("v_archaeologie_grabungsschutzgebiete", "Grabungsschutzgebiet", LAD_ARCH)]
 
 
-def _lad_gfi(layer: str, label: str, lat: float, lon: float) -> dict:
+def _lad_gfi(layer: str, label: str, base: str, lat: float, lon: float) -> dict:
     import re as _re
     d = 0.0012  # ~130 m Box
     params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
@@ -787,7 +794,7 @@ def _lad_gfi(layer: str, label: str, lat: float, lon: float) -> dict:
               "BBOX": f"{lat-d},{lon-d},{lat+d},{lon+d}", "WIDTH": 10, "HEIGHT": 10,
               "I": 5, "J": 5, "FORMAT": "image/png", "INFO_FORMAT": "text/plain"}
     try:
-        full = LAD_WMS + "?" + urllib.parse.urlencode(params)
+        full = base + "?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(full, headers=UA)
         with urllib.request.urlopen(req, timeout=25) as resp:
             txt = resp.read().decode("utf-8", "ignore")
@@ -807,9 +814,9 @@ def denkmal_live(lat: float, lon: float) -> dict:
     if hit is not None:
         hit["cached"] = True
         return hit
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        res = [ex.submit(_lad_gfi, layer, label, lat, lon).result()
-               for layer, label in LAD_LAYER]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        res = [ex.submit(_lad_gfi, layer, label, base, lat, lon).result()
+               for layer, label, base in LAD_LAYER]
     out = {"status": "live" if any(r["status"] == "live" for r in res) else "offline",
            "quelle": "LAD BW via LGL-owsproxy (WMS)", "cached": False, "objekte": res}
     cache_put(ckey, out)
