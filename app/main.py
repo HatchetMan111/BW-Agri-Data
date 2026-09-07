@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -316,7 +316,7 @@ def pegel_live(lat: float, lon: float) -> dict:
 
 
 def osm_live(lat: float, lon: float) -> dict:
-    ckey = f"osm2:{round(lat,2)}:{round(lon,2)}"
+    ckey = f"osm3:{round(lat,2)}:{round(lon,2)}"
     hit = cache_get(ckey, 30 * 86400)
     if hit is not None:
         hit["cached"] = True
@@ -340,6 +340,14 @@ def osm_live(lat: float, lon: float) -> dict:
         f"(around:3000,{lat},{lon});"
         f"node[\"amenity\"~\"^(school|kindergarten|doctors|pharmacy)$\"]"
         f"(around:3000,{lat},{lon}););out tags center 60;",
+        "(node[\"tourism\"~\"^(attraction|museum|viewpoint|artwork|zoo|theme_park|aquarium|gallery)$\"]"
+        f"(around:10000,{lat},{lon});"
+        f"node[\"historic\"~\"^(castle|monument|memorial|ruins|archaeological_site|manor)$\"]"
+        f"(around:10000,{lat},{lon});"
+        f"way[\"historic\"~\"^(castle|monument|ruins|manor)$\"]"
+        f"(around:10000,{lat},{lon});"
+        f"node[\"leisure\"~\"^(park|garden)$\"](around:5000,{lat},{lon});"
+        f"node[\"natural\"~\"^(peak|cave_entrance)$\"](around:10000,{lat},{lon}););out tags center 60;",
     ]
     q = "[out:json][timeout:40];" + "".join(stmts)
     data, err = fetch_json("https://overpass-api.de/api/interpreter", timeout=60,
@@ -348,7 +356,7 @@ def osm_live(lat: float, lon: float) -> dict:
         return {"status": "offline", "error": err, "quelle": "OpenStreetMap (nicht erreichbar)"}
     try:
         reservate, nutzung = [], {}
-        gewaesser, wald_types = [], []
+        gewaesser, wald_types, sights = [], [], []
         d_autobahn, d_bahn = [], []
         pois: dict[str, list] = {}
         for e in data.get("elements", []):
@@ -372,6 +380,15 @@ def osm_live(lat: float, lon: float) -> dict:
                 if tags.get("name"):
                     gewaesser.append({"name": tags["name"], "typ": tags["waterway"],
                                       "dist_km": round(d, 1)})
+            elif (tags.get("tourism") in ("attraction", "museum", "viewpoint", "artwork",
+                                          "zoo", "theme_park", "aquarium", "gallery")
+                    or tags.get("historic") in ("castle", "monument", "memorial", "ruins",
+                                                "archaeological_site", "manor")
+                    or (tags.get("leisure") in ("park", "garden") and tags.get("name"))
+                    or tags.get("natural") in ("peak", "cave_entrance")):
+                art, icon = sight_de(tags)
+                sights.append({"name": tags.get("name") or art, "art": art, "icon": icon,
+                               "dist_km": round(d, 1), "lat": c["lat"], "lon": c["lon"]})
             elif tags.get("highway") in ("motorway", "trunk"):
                 d_autobahn.append(d)
             elif tags.get("railway") in ("rail", "light_rail"):
@@ -386,11 +403,18 @@ def osm_live(lat: float, lon: float) -> dict:
                 pois.setdefault(tags["amenity"], []).append(d)
         reservate.sort(key=lambda r: r["dist_km"])
         gewaesser.sort(key=lambda r: r["dist_km"])
+        sights.sort(key=lambda r: r["dist_km"])
         seen, gw_eindeutig = set(), []
         for g in gewaesser:
             if g["name"] not in seen:
                 seen.add(g["name"])
                 gw_eindeutig.append(g)
+        seen_s, sights_eindeutig = set(), []
+        for s in sights:
+            key = (s["name"], s["art"])
+            if key not in seen_s:
+                seen_s.add(key)
+                sights_eindeutig.append(s)
         from collections import Counter as _C
         wald = dict(_C(wald_types))
         poi_min = {k: round(min(v), 1) for k, v in pois.items() if v}
@@ -399,6 +423,7 @@ def osm_live(lat: float, lon: float) -> dict:
                "landnutzung": [{"typ": landuse_de(k), "treffer": v}
                                for k, v in sorted(nutzung.items(), key=lambda i: -i[1])][:6],
                "gewaesser": gw_eindeutig[:5],
+               "sehenswuerdigkeiten": sights_eindeutig[:20],
                "autobahn_km": round(min(d_autobahn), 1) if d_autobahn else None,
                "bahn_km": round(min(d_bahn), 1) if d_bahn else None,
                "wald": {"typen": wald, "treffer": len(wald_types)},
@@ -413,6 +438,40 @@ def landuse_de(k: str) -> str:
     return {"farmland": "Acker", "meadow": "Grünland/Wiese", "orchard": "Streuobst/Plantage",
             "forest": "Wald", "vineyard": "Weinberg",
             "allotments": "Kleingärten"}.get(k, k)
+
+
+def sight_de(tags: dict) -> tuple[str, str]:
+    t = tags.get("tourism")
+    h = tags.get("historic")
+    if t == "museum":
+        return "Museum", "🏛️"
+    if t == "viewpoint":
+        return "Aussichtspunkt", "🔭"
+    if t == "zoo":
+        return "Zoo/Tierpark", "🦁"
+    if t == "artwork":
+        return "Kunstwerk", "🎨"
+    if t in ("theme_park", "aquarium", "gallery", "attraction"):
+        return "Sehenswürdigkeit", "⭐"
+    if h == "castle":
+        return "Burg/Schloss", "🏰"
+    if h == "monument":
+        return "Denkmal", "🗿"
+    if h == "memorial":
+        return "Gedenkstätte", "🕯️"
+    if h == "ruins":
+        return "Ruine", "🏚️"
+    if h == "archaeological_site":
+        return "Ausgrabungsstätte", "⛏️"
+    if h == "manor":
+        return "Herrenhaus/Gut", "🏡"
+    if tags.get("leisure") in ("park", "garden"):
+        return "Park/Garten", "🌳"
+    if tags.get("natural") == "peak":
+        return "Gipfel", "⛰️"
+    if tags.get("natural") == "cave_entrance":
+        return "Höhle", "🕳️"
+    return "Ausflugsziel", "📍"
 
 
 # LUBW-Fachdienste (RIPS/GDI-BW, alle WFS 2.0, Punktabfrage via Mini-BBox).

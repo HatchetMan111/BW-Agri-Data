@@ -162,7 +162,7 @@ svg.spark{width:100%;height:56px;display:block}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 "use strict";
-let map=null, marker=null, resMarkers=[], LAST_PEGEL=[];
+let map=null, marker=null, resMarkers=[], sightMarkers=[], sightLayer=null, LAST_PEGEL=[];
 function renderPegelSel(i){
   const el = document.getElementById("pegelCard");
   if(el && LAST_PEGEL[+i]) el.innerHTML = pegelCard(LAST_PEGEL[+i]);
@@ -208,8 +208,10 @@ function initMap(lat, lon){
     {...wmsOpt, layers:"sturmschadensrisiko_real_fichte", attribution:"Sturmrisiko © FVA-BW"});
   const kaefer = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Buchdruckergefaehrdung",
     {...wmsOpt, layers:"buchdruckerrisiko_rcp85_2021_2050", attribution:"Buchdrucker © FVA-BW"});
+  sightLayer = L.layerGroup().addTo(map);
   L.control.layers({"Karte (OSM)": osm, "Luftbild (DOP 20cm)": luft},
-    {"🌲 Waldbestockung (FVA)": bestock, "🌪️ Sturmrisiko Fichte": sturm, "🪲 Buchdrucker 2021–50": kaefer},
+    {"🌲 Waldbestockung (FVA)": bestock, "🌪️ Sturmrisiko Fichte": sturm, "🪲 Buchdrucker 2021–50": kaefer,
+     "⭐ Sehenswürdigkeiten": sightLayer},
     {collapsed: false}).addTo(map);
   marker = L.marker([lat, lon], {draggable:true}).addTo(map);
   marker.on("dragend", ()=>{ const p=marker.getLatLng(); setCoords(p.lat, p.lng); });
@@ -244,6 +246,16 @@ function drawReserves(list){
     resMarkers.push(m);
   });
 }
+function drawSights(list){
+  if(!map || !sightLayer) return;
+  sightLayer.clearLayers(); sightMarkers = [];
+  (list||[]).slice(0,20).forEach(s=>{
+    if(s.lat==null) return;
+    const m = L.marker([s.lat, s.lon]).addTo(sightLayer)
+      .bindPopup(`<b>${esc(s.icon||"⭐")} ${esc(s.name)}</b><br>${esc(s.art||"")} · ${s.dist_km} km`);
+    sightMarkers.push(m);
+  });
+}
 
 /* ---------- Suche ---------- */
 async function search(){
@@ -276,6 +288,7 @@ async function check(){
     const d = await j(`/api/standort/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
     box.innerHTML = renderReport(d);
     drawReserves((d.umfeld||{}).reservate);
+    drawSights((d.umfeld||{}).sehenswuerdigkeiten);
     const html = renderGarten(await j(`/api/garten/empfehlung?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`));
     document.getElementById("gartenOut").innerHTML = html;
     const inline = document.getElementById("gartenInline");
@@ -341,6 +354,7 @@ function renderReport(d){
   }
   const res = (u.reservate||[]).map(r=>`<li>🦋 <b>${esc(r.name)}</b> <span class="badge gray">${r.dist_km} km</span> <span class="small"><a href="${osmUrl(r.lat,r.lon)}" target="_blank" rel="noopener">Karte ↗</a></span></li>`).join("");
   const nutz = (u.landnutzung||[]).map(n=>`<span class="chip gray">${esc(n.typ)} ×${n.treffer}</span>`).join("");
+  const sights = (u.sehenswuerdigkeiten||[]).slice(0,8).map(s=>`<li>${esc(s.icon||"⭐")} <b>${esc(s.name)}</b> <span class="small">${esc(s.art||"")} · ${s.dist_km} km</span></li>`).join("");
   const bh = d.behoerden||{};
   const bhRows = (bh.layer||[]).map(l=>{
     const ic = l.status!=="live" ? "❔" : l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
@@ -358,6 +372,7 @@ function renderReport(d){
     <div class="card"><h3>🦋 Natur &amp; Nutzung ${liveBadge(u)}</h3>
       ${res?`<ul class="clean">${res}</ul>`:`<p class="small">Keine Schutzgebiete im Umkreis 15 km gefunden (OSM).</p>`}
       <p style="margin:8px 0 4px"><b>Nutzung im Umfeld (3 km):</b></p><div>${nutz||'<span class="small">–</span>'}</div>
+      ${sights?`<p style="margin:8px 0 4px"><b>⭐ Sehenswert im Umkreis (10 km, auch auf der Karte):</b></p><ul class="clean">${sights}</ul>`:`<p class="small">Keine Sehenswürdigkeiten im Umkreis gefunden.</p>`}
     </div>
   </div>
   <div class="card"><h3>🏛️ Behörden-Check (LUBW-Fachdaten) ${liveBadge(bh)}</h3>
