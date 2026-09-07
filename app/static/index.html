@@ -93,9 +93,10 @@ svg.spark{width:100%;height:56px;display:block}
 <div><input id="lon" value="9.1829" inputmode="decimal" aria-label="Länge"></div>
 </div>
 <div>
-<button class="primary" onclick="check()">Prüfen</button>
+<button class="primary" id="btnCheck" onclick="check()">Prüfen</button>
 <button class="secondary" onclick="save()">Als Standort speichern</button>
 </div>
+<p class="small" id="punktLabel">Punkt: noch nicht bestimmt.</p>
 </div>
 <div class="card"><h3>🗺️ Karte <span class="small">(Klick setzt den Punkt · rechts oben: Luftbild &amp; Fachlayer)</span></h3><div id="map"></div>
 <p id="mapfallback" class="small" style="display:none">Karte offline – <span id="osmlink"></span></p></div>
@@ -161,7 +162,16 @@ svg.spark{width:100%;height:56px;display:block}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 "use strict";
-let map=null, marker=null, resMarkers=[];
+let map=null, marker=null, resMarkers=[], LAST_PEGEL=[];
+function renderPegelSel(i){
+  const el = document.getElementById("pegelCard");
+  if(el && LAST_PEGEL[+i]) el.innerHTML = pegelCard(LAST_PEGEL[+i]);
+}
+function pegelCard(s0){
+  const tr = s0.trend_cm_24h==null ? "" : (s0.trend_cm_24h > 1 ? `<span class="badge warn">↗ +${s0.trend_cm_24h} cm/24h</span>` : s0.trend_cm_24h < -1 ? `<span class="badge ok">↘ ${s0.trend_cm_24h} cm/24h</span>` : `<span class="badge info">→ stabil</span>`);
+  return `<p style="margin:4px 0"><b>${esc(s0.gewaesser)} · ${esc(s0.name)}</b> <span class="small">(${s0.dist_km} km entfernt)</span> ${tr}</p>
+    ${s0.aktuell_cm!=null?`<div class="bignum">${s0.aktuell_cm} <span class="small">cm · ${esc((s0.zeit||"").slice(0,16).replace("T"," "))}</span></div>${sparkSVG(s0.verlauf)}`:`<p class="small">Keine Messwerte.</p>`}`;
+}
 async function j(url, opt){
   const r = await fetch(url, opt);
   if(!r.ok){ const t = await r.text(); throw new Error("HTTP "+r.status+": "+t.slice(0,200)); }
@@ -211,6 +221,18 @@ function setCoords(lat, lon){
   if(marker) marker.setLatLng([lat, lon]);
   if(map) map.panTo([lat, lon]);
   document.getElementById("osmlink").innerHTML = `<a href="${osmUrl(lat,lon)}" target="_blank" rel="noopener">Auf OpenStreetMap zeigen ↗</a>`;
+  updatePunktLabel(lat, lon);
+}
+async function updatePunktLabel(lat, lon){
+  const el = document.getElementById("punktLabel");
+  el.textContent = `Punkt: ${lat}, ${lon} (Adresse wird geladen …)`;
+  try{
+    const r = await j(`/api/reverse_geocode?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    if(r.status === "live" && (r.plz || r.ort))
+      el.textContent = `Punkt: ${r.plz} ${r.ort}${r.strasse?", "+r.strasse:""} (${lat}, ${lon})`;
+    else
+      el.textContent = `Punkt: ${lat}, ${lon}`;
+  }catch(e){ el.textContent = `Punkt: ${lat}, ${lon}`; }
 }
 function drawReserves(list){
   if(!map) return;
@@ -227,17 +249,21 @@ function drawReserves(list){
 async function search(){
   const q = document.getElementById("q").value.trim();
   const box = document.getElementById("searchres");
-  if(q.length < 2) return;
-  box.style.display = "block"; box.innerHTML = "<div>Suche …</div>";
+  const btn = document.querySelector("button[onclick='search()']");
+  if(q.length < 2){ box.style.display = "block"; box.innerHTML = "<div>Mindestens 2 Zeichen (PLZ oder Ort) eingeben.</div>"; return; }
+  box.style.display = "block"; box.innerHTML = "<div>Suche läuft …</div>";
+  if(btn){ btn.disabled = true; btn.textContent = "Sucht …"; }
   try{
     const d = await j("/api/geocode?q="+encodeURIComponent(q));
+    if(d.status !== "live"){ box.innerHTML = `<div>Suche offline${d.error?" ("+esc(String(d.error).slice(0,80))+")":""} – Koordinaten direkt eingeben oder Karte klicken.</div>`; return; }
     if(!d.treffer.length){ box.innerHTML = "<div>Keine Treffer – PLZ oder größeren Ort versuchen.</div>"; return; }
     box.innerHTML = d.treffer.map((t,i)=>`<div data-i="${i}">${esc(t.name)}</div>`).join("");
     box.querySelectorAll("div").forEach(el=>el.onclick = ()=>{
       const t = d.treffer[+el.dataset.i];
       box.style.display = "none"; setCoords(t.lat, t.lon); check();
     });
-  }catch(err){ box.innerHTML = `<div>Suche fehlgeschlagen: ${esc(err.message)}</div>`; }
+  }catch(err){ box.innerHTML = `<div>Suche fehlgeschlagen: ${esc(err.message)} – Backend unter <a href="/api/health" target="_blank">/api/health</a> prüfen.</div>`; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = "Suchen"; } }
 }
 
 /* ---------- Report ---------- */
@@ -306,11 +332,10 @@ function renderReport(d){
   }
   let pegelHtml;
   if(p.status === "live" && (p.stationen||[]).length){
-    const s0 = p.stationen[0];
-    const tr = s0.trend_cm_24h==null ? "" : (s0.trend_cm_24h > 1 ? `<span class="badge warn">↗ +${s0.trend_cm_24h} cm/24h</span>` : s0.trend_cm_24h < -1 ? `<span class="badge ok">↘ ${s0.trend_cm_24h} cm/24h</span>` : `<span class="badge info">→ stabil</span>`);
-    pegelHtml = `<p style="margin:4px 0"><b>${esc(s0.gewaesser)} · ${esc(s0.name)}</b> <span class="small">(${s0.dist_km} km entfernt)</span> ${tr}</p>
-      ${s0.aktuell_cm!=null?`<div class="bignum">${s0.aktuell_cm} <span class="small">cm · ${esc((s0.zeit||"").slice(0,16).replace("T"," "))}</span></div>${sparkSVG(s0.verlauf)}`:`<p class="small">Keine Messwerte.</p>`}
-      ${(p.stationen||[]).slice(1).map(s=>`<p class="small">· ${esc(s.gewaesser)} ${esc(s.name)} (${s.dist_km} km)${s.aktuell_cm!=null?`: <b>${s.aktuell_cm} cm</b>`:""}</p>`).join("")}`;
+    LAST_PEGEL = p.stationen;
+    const opts = p.stationen.map((s,i)=>`<option value="${i}"${i===0?" selected":""}>${esc(s.gewaesser)} · ${esc(s.name)} (${s.dist_km} km)</option>`).join("");
+    pegelHtml = `${p.stationen.length>1?`<label>Pegel wählen</label><select id="pegelsel" onchange="renderPegelSel(this.value)" style="width:100%;padding:9px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit;font:inherit">${opts}</select>`:""}
+      <div id="pegelCard">${pegelCard(p.stationen[0])}</div>`;
   } else {
     pegelHtml = `<div class="warnbox">Pegeldaten offline${p.error?" ("+esc(p.error.slice(0,80))+")":""}.</div>`;
   }
@@ -450,10 +475,7 @@ function ampelBadge(a){
 }
 function renderBau(b){
   const fn = {schutz:"🏛️ Schutzgebiete (30 %)", laerm:"🔊 Lärm-Abstände (20 %)", starkregen:"⛈️ Starkregen (15 %)", hang:"⛰️ Hang/Baugrund (15 %)", lage:"🚏 Lage (20 %)"};
-  const bars = Object.entries(b.faktoren||{}).map(([k,f])=>`
-    <div><span class="small"><b>${fn[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
-    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
-    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const bars = Object.entries(b.faktoren||{}).map(([k,f])=>faktorBar(fn[k]||k, f)).join("");
   const ko = (b.ko_kriterien||[]).map(k=>`<div class="warnbox">🛑 <b>K.O.:</b> ${esc(k)}</div>`).join("");
   const auf = (b.auflagen||[]).map(k=>`<div class="tip">⚠️ ${esc(k)}</div>`).join("");
   const denk = (b.denkmal||[]).filter(o=>o.treffer).map(o=>`<li>🏛️ <b>${esc(o.label)}</b><br><span class="small">${esc(o.beschreibung||"")}</span></li>`).join("");
@@ -463,6 +485,7 @@ function renderBau(b){
     <div class="bignum" style="color:${scoreColor(b.score)};font-size:52px">${b.score==null?"?":b.score}<span class="small">/100</span></div>
     <div>${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span></div>
   </div>
+  ${aussageBox(b.aussagekraft, b.gegenwert)}
   ${auf}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
   ${denk?`<div class="card"><h3>🏛️ Denkmalschutz (LAD, ±130 m)</h3><ul class="clean">${denk}</ul></div>`:""}
@@ -478,10 +501,7 @@ async function checkWald(){
 }
 function renderWald(w){
   const fn = {waldanteil:"🌲 Waldanteil (40 %)", klimafitness:"🌤️ Klimafitness (30 %)", sturmsicherheit:"🌪️ Sturmsicherheit (30 %)"};
-  const bars = Object.entries(w.faktoren||{}).map(([k,f])=>`
-    <div><span class="small"><b>${fn[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
-    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
-    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const bars = Object.entries(w.faktoren||{}).map(([k,f])=>faktorBar(fn[k]||k, f)).join("");
   const hin = (w.hinweise||[]).map(h=>`<div class="tip">💡 ${esc(h)}</div>`).join("");
   return `
   <div class="card" style="text-align:center">
@@ -489,6 +509,7 @@ function renderWald(w){
     <div><span class="badge ${w.score>=70?"ok":w.score>=45?"warn":"bad"}">${esc(w.label)}</span>
     <span class="small">${esc(w.lat)}, ${esc(w.lon)} · ${w.dauer_s}s</span></div>
   </div>
+  ${aussageBox(w.aussagekraft, w.gegenwert)}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
   ${hin}
   <p class="small">${esc(w.fva_hinweis||"")}</p>
@@ -507,13 +528,30 @@ function scoreColor(s){
   if(s==null) return "#888";
   return s>=80 ? "#2f7d4f" : s>=65 ? "#7ab54a" : s>=50 ? "#a97b1f" : "#b53a3a";
 }
+function vertDot(v){
+  if(v==="hoch") return ' <span class="badge ok" title="Amtliche Messung / Fachdaten">● belastbar</span>';
+  if(v==="mittel") return ' <span class="badge info" title="Modell oder Rasterdaten">● Modell</span>';
+  if(!v) return "";
+  return ' <span class="badge warn" title="Näherung / Community-Daten">● Schätzung</span>';
+}
+function faktorBar(name, f){
+  return `<div><span class="small"><b>${name}</b>: ${f.wert==null?"offline":f.wert+" / 100"}${vertDot(f.vertrauen)}</span>
+  <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
+  <p class="small" style="margin:0">${esc(f.text)}</p>
+  ${f.vertrauen_grund?`<p class="small" style="margin:0 0 6px;opacity:.55">Datenbasis: ${esc(f.vertrauen_grund)}</p>`:`<p style="margin:0 0 6px"></p>`}</div>`;
+}
+function aussageBox(aussage, gegenwert){
+  if(!aussage || aussage.prozent==null) return "";
+  const col = aussage.prozent>=80 ? "#2f7d4f" : aussage.prozent>=55 ? "#a97b1f" : "#b53a3a";
+  return `<div class="card"><h3>🔍 So belastbar ist der Wert: ${aussage.prozent} %</h3>
+  <div class="bar"><i style="width:${aussage.prozent}%;background:${col}"></i></div>
+  <p class="small">${esc(aussage.text)}</p>
+  ${gegenwert?`<div class="tip">⚖️ <b>Gegenwert:</b> ${esc(gegenwert)}</div>`:""}</div>`;
+}
 function renderAgri(a){
   const col = scoreColor(a.score);
   const faktorNamen = {boden:"🌍 Boden (35 %)", klima:"🌤️ Klima (20 %)", hang:"⛰️ Hang (20 %)", umfeld:"🚜 Umfeld (15 %)", schutz:"🦋 Schutz (10 %)"};
-  const bars = Object.entries(a.faktoren||{}).map(([k,f])=>`
-    <div><span class="small"><b>${faktorNamen[k]||k}</b>: ${f.wert==null?"offline":f.wert+" / 100"}</span>
-    <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
-    <p class="small" style="margin:0 0 6px">${esc(f.text)}</p></div>`).join("");
+  const bars = Object.entries(a.faktoren||{}).map(([k,f])=>faktorBar(faktorNamen[k]||k, f)).join("");
   const kult = (a.kulturen||[]).map(k=>{
     const b = k.status==="geeignet" ? "ok" : k.status==="bedingt" ? "warn" : "bad";
     const ic = k.status==="geeignet" ? "✅" : k.status==="bedingt" ? "⚠️" : "🛑";
@@ -526,6 +564,7 @@ function renderAgri(a){
     <div><span class="badge ${a.score>=65?"ok":a.score>=50?"warn":"bad"}">${esc(a.label)}</span>
     <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span></div>
   </div>
+  ${aussageBox(a.aussagekraft, a.gegenwert)}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
   ${(a.behoerden||[]).length?`<div class="card"><h3>🏛️ Behörden-Layer</h3><ul class="clean">${a.behoerden.map(l=>{
     const ic = l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
@@ -549,9 +588,13 @@ async function loadSites(){
   try{
     const d = await j("/api/standorte");
     document.getElementById("sites").innerHTML = d.length
-      ? d.map(s=>`<li><b>${esc(s.label)}</b> – ${esc(s.lat)}, ${esc(s.lon)} <span class="small">[ID ${s.id}] <a href="#" onclick="useSite(${s.lat},${s.lon});return false;">übernehmen</a></span></li>`).join("")
+      ? d.map(s=>`<li><b>${esc(s.label)}</b> – ${esc(s.lat)}, ${esc(s.lon)} <span class="small">[ID ${s.id}] <a href="#" onclick="useSite(${s.lat},${s.lon});return false;">übernehmen</a> · <a href="#" onclick="delSite(${s.id});return false;" style="color:#ff9d9d">löschen</a></span></li>`).join("")
       : '<li class="small">Noch keine Standorte.</li>';
   }catch(err){ document.getElementById("sites").innerHTML = `<li class="err">Laden fehlgeschlagen: ${esc(err.message)}</li>`; }
+}
+async function delSite(id){
+  if(!confirm("Standort wirklich löschen?")) return;
+  await fetch("/api/standorte/"+id,{method:"DELETE"}); loadSites();
 }
 function useSite(lat, lon){ setCoords(lat, lon); show("A"); check(); }
 async function loadBeete(){

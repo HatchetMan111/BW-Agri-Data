@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -583,6 +583,47 @@ def _score_band(wert: float, ideal_lo: float, ideal_hi: float,
     return max(minimum, 100.0 - (abstand / tol) * 90.0)
 
 
+# Vertrauen: hoch = amtliche Messung, mittel = Modell/Raster, niedrig = Naeherung/Community
+VERTRAUEN_WERT = {"hoch": 100, "mittel": 60, "niedrig": 25, "keine": 0}
+
+
+def mit_aussagekraft(faktoren: dict) -> dict:
+    aktiv = {k: v for k, v in faktoren.items() if v.get("wert") is not None}
+    if not aktiv:
+        return {"prozent": None, "text": "Keine belastbaren Daten – alle Module offline."}
+    punkte = sum(VERTRAUEN_WERT.get(v.get("vertrauen", "niedrig"), 25) * v["gewicht"]
+                 for v in aktiv.values())
+    gewicht = sum(v["gewicht"] for v in aktiv.values())
+    prozent = round(punkte / gewicht)
+    schwach = [k for k, v in aktiv.items() if v.get("vertrauen") == "niedrig"]
+    text = ("Sehr belastbar – ueberwiegend Messungen und amtliche Fachdaten." if prozent >= 80
+            else "Belastbar mit Einschraenkungen – Modelle und Naeherungen enthalten." if prozent >= 55
+            else "Grobe Orientierung – wichtige Faktoren sind nur geschaetzt.")
+    if schwach:
+        text += " Am unsichersten: " + ", ".join(schwach) + "."
+    return {"prozent": prozent, "text": text}
+
+
+def reverse_geocode_live(lat: float, lon: float) -> dict:
+    ckey = f"rgeo:{round(lat,4)}:{round(lon,4)}"
+    hit = cache_get(ckey, 90 * 86400)
+    if hit is not None:
+        return hit
+    params = {"lat": lat, "lon": lon, "format": "json", "zoom": 16, "addressdetails": 1}
+    data, err = fetch_json("https://nominatim.openstreetmap.org/reverse", timeout=15, params=params)
+    if data is None:
+        return {"status": "offline", "error": err}
+    addr = data.get("address", {})
+    out = {"status": "live",
+           "anzeige": data.get("display_name", ""),
+           "plz": addr.get("postcode", ""),
+           "ort": addr.get("city") or addr.get("town") or addr.get("village")
+                 or addr.get("municipality", ""),
+           "strasse": (addr.get("road", "") + (" " + addr.get("house_number", "") if addr.get("house_number") else "")).strip()}
+    cache_put(ckey, out)
+    return out
+
+
 def agri_test(lat: float, lon: float) -> dict:
     """Landwirtschafts-Eignung: Boden 35 / Klima 20 / Hang 20 / Umfeld 15 / Schutz 10."""
     with ThreadPoolExecutor(max_workers=4) as ex:
@@ -607,7 +648,9 @@ def agri_test(lat: float, lon: float) -> dict:
         if (boden.get("humus_g_kg") or 0) >= 20:
             s = min(100, s + 5)
         faktoren["boden"] = {"gewicht": 35, "wert": round(s),
-                             "text": f"{boden.get('bodenart')} · pH {boden.get('ph')} · Humus {boden.get('humus_g_kg')} g/kg"}
+                             "text": f"{boden.get('bodenart')} · pH {boden.get('ph')} · Humus {boden.get('humus_g_kg')} g/kg",
+                             "vertrauen": "mittel",
+                             "vertrauen_grund": "SoilGrids-Modell (250-m-Raster) – keine Bohrung, keine Ackerzahl"}
     else:
         faktoren["boden"] = {"gewicht": 35, "wert": None,
                              "text": "Keine Bodendaten (versiegelt/offline)"}
@@ -620,7 +663,9 @@ def agri_test(lat: float, lon: float) -> dict:
             s -= min(15, (klima["hitzetage_jahr"] - 20) * 0.8)
         faktoren["klima"] = {"gewicht": 20, "wert": round(max(5, s)),
                              "text": (f"{klima['niederschlag_mm_jahr']} mm/Jahr · "
-                                      f"{klima['temp_mittel_c']} °C · {klima['frosttage_jahr']} Frosttage")}
+                                      f"{klima['temp_mittel_c']} °C · {klima['frosttage_jahr']} Frosttage"),
+                             "vertrauen": "mittel",
+                             "vertrauen_grund": "ERA5-Reanalyse 2020–24 (5 Jahre) – kein 30-jähriges Klimamittel"}
     else:
         faktoren["klima"] = {"gewicht": 20, "wert": None, "text": "Klimadaten offline"}
     # Hang 20 %
@@ -630,7 +675,9 @@ def agri_test(lat: float, lon: float) -> dict:
         if hang.get("exposition") in ("S", "SW", "SO"):
             s = min(100, s + 5)
         faktoren["hang"] = {"gewicht": 20, "wert": round(s),
-                            "text": f"{hp} % ({hang.get('hang_klasse')}) · Exposition {hang.get('exposition')}"}
+                            "text": f"{hp} % ({hang.get('hang_klasse')}) · Exposition {hang.get('exposition')}",
+                            "vertrauen": "mittel",
+                            "vertrauen_grund": "Höhenmodell ~30 m Auflösung – kein Vermessungs-DGM"}
     else:
         faktoren["hang"] = {"gewicht": 20, "wert": None, "text": "Hangdaten offline"}
     # Umfeld 15 %
@@ -641,7 +688,9 @@ def agri_test(lat: float, lon: float) -> dict:
         anteil = (agri_hits / total) if total else 0
         s = 90 if anteil >= 0.6 else 70 if anteil >= 0.3 else (50 if agri_hits else 40)
         faktoren["umfeld"] = {"gewicht": 15, "wert": s,
-                              "text": f"Agrar-Anteil im Umfeld: {round(anteil*100)} % (OSM, 3 km)"}
+                              "text": f"Agrar-Anteil im Umfeld: {round(anteil*100)} % (OSM, 3 km)",
+                              "vertrauen": "niedrig",
+                              "vertrauen_grund": "OSM Community-Daten – lückenhaft, kein LPIS-Feldblock"}
     else:
         faktoren["umfeld"] = {"gewicht": 15, "wert": None, "text": "Umfeld offline"}
     # Schutz 10 % – amtliche LUBW-Layer haben Vorrang vor OSM-Naeherung
@@ -657,7 +706,9 @@ def agri_test(lat: float, lon: float) -> dict:
             s, txt = 65, "In " + ", ".join(treffer_gelb) + " – Auflagen beachten"
         else:
             s, txt = 100, "Keine Schutzgebiets-Treffer (LUBW-Fachdaten, Punktabfrage)"
-        faktoren["schutz"] = {"gewicht": 10, "wert": s, "text": txt}
+        faktoren["schutz"] = {"gewicht": 10, "wert": s, "text": txt,
+                              "vertrauen": "hoch",
+                              "vertrauen_grund": "Amtliche LUBW-Punktabfrage (±50 m)"}
     elif osm.get("status") == "live":
         res = osm.get("reservate", [])
         nearest = min([r["dist_km"] for r in res], default=99)
@@ -677,8 +728,18 @@ def agri_test(lat: float, lon: float) -> dict:
     label = ("hervorragend" if score is not None and score >= 80 else "gut" if score is not None and score >= 65
              else "mittel" if score is not None and score >= 50 else "schwierig"
              if score is not None else "unbestimmt")
+    gegenwert = ("Spitzenlage – Niveau bester Kraichgau-/Gaeu-Boeden (Ackerzahl 60+). "
+                 "Fuer Pacht/Kauf: Bodenschaetzung und LPIS-Feldblock bestaetigen lassen."
+                 if score is not None and score >= 80 else
+                 "Gute Normallage – ohne Einschraenkungen bewirtschaftbar."
+                 if score is not None and score >= 65 else
+                 "Mittlere Lage – Ertrag braucht angepasste Bewirtschaftung (Fruchtfolge, Humus)."
+                 if score is not None and score >= 50 else
+                 "Grenzlage – eher Gruenland, Streuobst oder Extensivierung statt Ackerbau."
+                 if score is not None else "Keine Bewertung moeglich (Daten offline).")
     return {"lat": lat, "lon": lon, "score": score, "label": label, "ko_kriterium": ko,
             "faktoren": faktoren, "kulturen": kulturmatrix(boden, klima, hang),
+            "aussagekraft": mit_aussagekraft(faktoren), "gegenwert": gegenwert,
             "behoerden": amt.get("layer", []) if amt.get("status") == "live" else [],
             "quellen": {"boden": boden.get("quelle"), "klima": klima.get("quelle"),
                         "hang": hang.get("quelle"), "umfeld": osm.get("quelle"),
@@ -824,19 +885,38 @@ def bau_test(lat: float, lon: float) -> dict:
                            "wert": 20 if ko else (65 if gelb else 100),
                            "text": ("K.O.: " + "; ".join(ko)) if ko else (
                                "Auflagen: " + "; ".join(gelb[:3]) if gelb
-                               else "Keine Schutzgebiets-Treffer")},
-                "laerm": {"gewicht": 20, "wert": laerm, "text": laerm_txt},
-                "starkregen": {"gewicht": 15, "wert": regen, "text": regen_txt},
-                "hang": {"gewicht": 15, "wert": hang_w, "text": hang_txt},
+                               else "Keine Schutzgebiets-Treffer"),
+                           "vertrauen": "hoch",
+                           "vertrauen_grund": "Amtliche LUBW-Punktabfrage + LAD-Denkmal (±130 m)"},
+                "laerm": {"gewicht": 20, "wert": laerm, "text": laerm_txt,
+                          "vertrauen": "niedrig",
+                          "vertrauen_grund": "Nur Abstands-Naeherung (OSM) – keine Messung, keine Lärmkartierung"},
+                "starkregen": {"gewicht": 15, "wert": regen, "text": regen_txt,
+                               "vertrauen": "mittel",
+                               "vertrauen_grund": "ERA5-Reanalyse 2020–24 – kein Starkregen-Kataster"},
+                "hang": {"gewicht": 15, "wert": hang_w, "text": hang_txt,
+                         "vertrauen": "mittel",
+                         "vertrauen_grund": "Höhenmodell ~30 m – kein Baugrundgutachten"},
                 "lage": {"gewicht": 20, "wert": lage,
                          "text": ", ".join(f"{k} {pois.get({'Bushalt':'bushalt','Bahnhof':'bahnhof','Supermarkt':'supermarkt','Schule/Kita':'school','Arzt':'doctors'}[k], '?')} km"
-                                         for k in lage_einzel)}}
+                                         for k in lage_einzel),
+                         "vertrauen": "niedrig",
+                         "vertrauen_grund": "OSM-POIs (Community) – Fahrplaene nicht geprueft"}}
     aktiv = {k: v for k, v in faktoren.items() if v["wert"] is not None}
     score = round(sum(v["wert"] * v["gewicht"] for v in aktiv.values())
                   / sum(v["gewicht"] for v in aktiv.values())) if aktiv else None
     ampel = "rot" if ko else ("gelb" if (score is not None and score < 70) or gelb else "gruen")
+    gegenwert = ("K.O. – ohne positive Behoerdenauskunft nicht kaufen."
+                 if ko else
+                 "Unauffaellige Lage – normale Kaufpruefung (Baulasten, B-Plan, Gutachten) reicht."
+                 if score is not None and score >= 80 else
+                 "Mit Auflagen baubar – Behoerden und Gutachter frueh einbinden, Preis entsprechend verhandeln."
+                 if score is not None and score >= 60 else
+                 "Hohes Risiko – nur mit schriftlicher Behoerdenzusage und Bodengutachten kaufen."
+                 if score is not None else "Keine Bewertung moeglich (Daten offline).")
     return {"lat": lat, "lon": lon, "score": score, "ampel": ampel,
             "ko_kriterien": ko, "auflagen": gelb, "faktoren": faktoren,
+            "aussagekraft": mit_aussagekraft(faktoren), "gegenwert": gegenwert,
             "denkmal": denk.get("objekte", []) if denk.get("status") == "live" else [],
             "quellen": {"schutz": amt.get("quelle"), "denkmal": denk.get("quelle"),
                         "lage": osm.get("quelle"), "klima": klim.get("quelle")}}
@@ -887,18 +967,31 @@ def wald_test(lat: float, lon: float) -> dict:
         hinweise.append(f"Boden: {bod.get('bodenart')} (pH {bod.get('ph')}) – "
                         + ("Staunaesse-tolerant pflanzen (Erle/Esche) bei schwerem Boden."
                            if (bod.get("ton_pct") or 0) > 35 else "Gute Wuchsbedingungen."))
-    faktoren = {"waldanteil": {"gewicht": 40, "wert": potenzial, "text": anteil_txt},
-                "klimafitness": {"gewicht": 30, "wert": klima_fit, "text": klima_txt},
+    faktoren = {"waldanteil": {"gewicht": 40, "wert": potenzial, "text": anteil_txt,
+                               "vertrauen": "niedrig",
+                               "vertrauen_grund": "OSM Community-Daten – keine Forsteinrichtung"},
+                "klimafitness": {"gewicht": 30, "wert": klima_fit, "text": klima_txt,
+                                 "vertrauen": "mittel",
+                                 "vertrauen_grund": "ERA5-Reanalyse 2020–24"},
                 "sturmsicherheit": {"gewicht": 30, "wert": sturm,
-                                    "text": f"Hang {hp} % {expo}" if hp else "Hangdaten offline"}}
+                                    "text": f"Hang {hp} % {expo}" if hp else "Hangdaten offline",
+                                    "vertrauen": "mittel",
+                                    "vertrauen_grund": "Hang/Exposition + Faustregeln – kein FVA-Risikomodell"}}
     aktiv = {k: v for k, v in faktoren.items() if v["wert"] is not None}
     score = round(sum(v["wert"] * v["gewicht"] for v in aktiv.values())
                   / sum(v["gewicht"] for v in aktiv.values())) if aktiv else None
-    return {"lat": lat, "lon": lon, "score": score,
-            "label": ("gutes Waldpotenzial" if score is not None and score >= 70
-                      else "mittleres Potenzial" if score is not None and score >= 45
-                      else "geringes Potenzial" if score is not None else "unbestimmt"),
+    label = ("gutes Waldpotenzial" if score is not None and score >= 70
+             else "mittleres Potenzial" if score is not None and score >= 45
+             else "geringes Potenzial" if score is not None else "unbestimmt")
+    gegenwert = ("Solider Wirtschaftswald-Standort – Forsteinrichtung lohnt."
+                 if score is not None and score >= 70 else
+                 "Mischwald mit Pflege – auf Baumartenwahl und Sturm achten."
+                 if score is not None and score >= 45 else
+                 "Wenig Waldpotenzial – eher Offenlandnutzung."
+                 if score is not None else "Keine Bewertung moeglich (Daten offline).")
+    return {"lat": lat, "lon": lon, "score": score, "label": label,
             "faktoren": faktoren, "hinweise": hinweise,
+            "aussagekraft": mit_aussagekraft(faktoren), "gegenwert": gegenwert,
             "fva_hinweis": ("FVA-Fachdaten (Bestockung, Sturmwurf-/Käfergefahr) als Karten-Overlay: "
                             "https://www.fva-bw.de – Punktabfrage folgt, sobald ein offener Dienst verfuegbar ist.")}
 
@@ -953,6 +1046,13 @@ def meta() -> dict:
 @app.get("/api/geocode")
 def geocode(q: str = Query(min_length=2, max_length=200)) -> dict:
     return geocode_live(q)
+
+
+@app.get("/api/reverse_geocode")
+def reverse_geocode(lat: float = Query(ge=-90, le=90),
+                    lon: float = Query(ge=-180, le=180)) -> dict:
+    """Adresse/PLZ zu Koordinaten (Nominatim, gecacht) – fuer Karten-Feedback."""
+    return reverse_geocode_live(lat, lon)
 
 
 @app.get("/api/standort/reverse")
@@ -1049,6 +1149,19 @@ def add_standort(payload: StandortIn) -> dict:
             (payload.label, payload.lat, payload.lon, datetime.now(timezone.utc).isoformat()))
         con.commit()
         return {"id": cur.lastrowid, **payload.model_dump()}
+    finally:
+        con.close()
+
+
+@app.delete("/api/standorte/{standort_id}")
+def delete_standort(standort_id: int) -> dict:
+    con = db()
+    try:
+        cur = con.execute("DELETE FROM standorte WHERE id=?", (standort_id,))
+        con.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Standort nicht gefunden")
+        return {"deleted": standort_id}
     finally:
         con.close()
 
