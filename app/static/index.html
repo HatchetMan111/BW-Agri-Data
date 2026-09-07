@@ -60,6 +60,13 @@ details.raw pre{white-space:pre-wrap;font-size:11px;opacity:.75;max-height:300px
 footer{padding:16px 20px;font-size:12px;opacity:.6;border-top:1px solid #2a3642}
 a{color:#7ab8ff}
 svg.spark{width:100%;height:56px;display:block}
+@media print{
+  header nav, nav, #map, button, .searchres, details.raw, footer{display:none !important}
+  body{background:#fff;color:#000}
+  .card{border:1px solid #999;background:#fff;color:#000;break-inside:avoid}
+  main{max-width:100%;padding:0}
+  a{color:#000;text-decoration:none}
+}
 </style>
 </head>
 <body>
@@ -162,7 +169,7 @@ svg.spark{width:100%;height:56px;display:block}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 "use strict";
-let map=null, marker=null, resMarkers=[], sightMarkers=[], sightLayer=null, LAST_PEGEL=[];
+let map=null, marker=null, resMarkers=[], sightMarkers=[], ladeMarkers=[], sightLayer=null, ladeLayer=null, LAST_PEGEL=[];
 function renderPegelSel(i){
   const el = document.getElementById("pegelCard");
   if(el && LAST_PEGEL[+i]) el.innerHTML = pegelCard(LAST_PEGEL[+i]);
@@ -209,9 +216,10 @@ function initMap(lat, lon){
   const kaefer = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Buchdruckergefaehrdung",
     {...wmsOpt, layers:"buchdruckerrisiko_rcp85_2021_2050", attribution:"Buchdrucker © FVA-BW"});
   sightLayer = L.layerGroup().addTo(map);
+  ladeLayer = L.layerGroup().addTo(map);
   L.control.layers({"Karte (OSM)": osm, "Luftbild (DOP 20cm)": luft},
     {"🌲 Waldbestockung (FVA)": bestock, "🌪️ Sturmrisiko Fichte": sturm, "🪲 Buchdrucker 2021–50": kaefer,
-     "⭐ Sehenswürdigkeiten": sightLayer},
+     "⭐ Sehenswürdigkeiten": sightLayer, "🔌 Ladesäulen": ladeLayer},
     {collapsed: false}).addTo(map);
   marker = L.marker([lat, lon], {draggable:true}).addTo(map);
   marker.on("dragend", ()=>{ const p=marker.getLatLng(); setCoords(p.lat, p.lng); });
@@ -256,6 +264,16 @@ function drawSights(list){
     sightMarkers.push(m);
   });
 }
+function drawLaden(list){
+  if(!map || !ladeLayer) return;
+  ladeLayer.clearLayers(); ladeMarkers = [];
+  (list||[]).slice(0,10).forEach(s=>{
+    if(s.lat==null) return;
+    const m = L.circleMarker([s.lat, s.lon], {radius:6, color: s.schnell?"#e6a817":"#3a7ab5", fillOpacity:.7}).addTo(ladeLayer)
+      .bindPopup(`<b>🔌 ${s.kw} kW${s.schnell?" (schnell)":""}</b><br>${esc(s.betreiber)}<br>${esc(s.adresse)} · ${s.dist_km} km`);
+    ladeMarkers.push(m);
+  });
+}
 
 /* ---------- Suche ---------- */
 async function search(){
@@ -289,6 +307,7 @@ async function check(){
     box.innerHTML = renderReport(d);
     drawReserves((d.umfeld||{}).reservate);
     drawSights((d.umfeld||{}).sehenswuerdigkeiten);
+    drawLaden((d.laden||{}).saeulen);
     const html = renderGarten(await j(`/api/garten/empfehlung?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`));
     document.getElementById("gartenOut").innerHTML = html;
     const inline = document.getElementById("gartenInline");
@@ -355,6 +374,8 @@ function renderReport(d){
   const res = (u.reservate||[]).map(r=>`<li>🦋 <b>${esc(r.name)}</b> <span class="badge gray">${r.dist_km} km</span> <span class="small"><a href="${osmUrl(r.lat,r.lon)}" target="_blank" rel="noopener">Karte ↗</a></span></li>`).join("");
   const nutz = (u.landnutzung||[]).map(n=>`<span class="chip gray">${esc(n.typ)} ×${n.treffer}</span>`).join("");
   const sights = (u.sehenswuerdigkeiten||[]).slice(0,8).map(s=>`<li>${esc(s.icon||"⭐")} <b>${esc(s.name)}</b> <span class="small">${esc(s.art||"")} · ${s.dist_km} km</span></li>`).join("");
+  const lad = d.laden||{};
+  const ladList = (lad.saeulen||[]).slice(0,5).map(s=>`<li>🔌 <b>${s.kw} kW${s.schnell?" ⚡":""}</b> <span class="small">${esc(s.betreiber)} · ${esc(s.adresse)} · ${s.dist_km} km</span></li>`).join("");
   const bh = d.behoerden||{};
   const bhRows = (bh.layer||[]).map(l=>{
     const ic = l.status!=="live" ? "❔" : l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
@@ -373,7 +394,9 @@ function renderReport(d){
       ${res?`<ul class="clean">${res}</ul>`:`<p class="small">Keine Schutzgebiete im Umkreis 15 km gefunden (OSM).</p>`}
       <p style="margin:8px 0 4px"><b>Nutzung im Umfeld (3 km):</b></p><div>${nutz||'<span class="small">–</span>'}</div>
       ${sights?`<p style="margin:8px 0 4px"><b>⭐ Sehenswert im Umkreis (10 km, auch auf der Karte):</b></p><ul class="clean">${sights}</ul>`:`<p class="small">Keine Sehenswürdigkeiten im Umkreis gefunden.</p>`}
+      ${ladList?`<p style="margin:8px 0 4px"><b>🔌 Nächste Ladesäulen ${liveBadge(lad)}:</b></p><ul class="clean">${ladList}</ul>`:""}
     </div>
+  <div class="card"><h3>🖨️ Exposé <span class="small">(druckt nur diesen Bericht)</span></h3><button class="secondary" onclick="window.print()">Drucken / PDF</button></div>
   </div>
   <div class="card"><h3>🏛️ Behörden-Check (LUBW-Fachdaten) ${liveBadge(bh)}</h3>
     ${bhRows?`<ul class="clean">${bhRows}</ul>`:`<p class="small">Behördendaten offline – später erneut versuchen.</p>`}
@@ -500,6 +523,7 @@ function renderBau(b){
     <div class="bignum" style="color:${scoreColor(b.score)};font-size:52px">${b.score==null?"?":b.score}<span class="small">/100</span></div>
     <div>${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span></div>
   </div>
+  <div><button class="secondary" onclick="window.print()">🖨️ Exposé drucken</button></div>
   ${aussageBox(b.aussagekraft, b.gegenwert)}
   ${auf}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
@@ -585,6 +609,7 @@ function renderAgri(a){
     const ic = l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
     return `<li>${ic} <b>${esc(l.label)}</b>${l.treffer?` – <span class="small">${esc((l.namen||[]).join("; "))}</span>`:' <span class="small">frei</span>'}</li>`;
   }).join("")}</ul></div>`:""}
+  <div><button class="secondary" onclick="window.print()">🖨️ Exposé drucken</button></div>
   <div class="card"><h3>🌾 Kultur-Eignung</h3><ul class="clean">${kult}</ul>
   <p class="small">Regelwerk transparent im Code (kulturmatrix). LPIS-Feldblock-Prüfung folgt als WFS-Punktabfrage.</p></div>
   <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(a,null,2))}</pre></details>`;

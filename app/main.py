@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.8.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -1062,6 +1062,49 @@ def wald_test(lat: float, lon: float) -> dict:
                             "https://www.fva-bw.de – Punktabfrage folgt, sobald ein offener Dienst verfuegbar ist.")}
 
 
+def ladesaeulen_live(lat: float, lon: float) -> dict:
+    """Naechste E-Ladesaeulen (MobiData-BW WFS, GeoJSON, mit Leistung/Adresse)."""
+    ckey = f"laden:{round(lat,2)}:{round(lon,2)}"
+    hit = cache_get(ckey, 7 * 86400)
+    if hit is not None:
+        hit["cached"] = True
+        return hit
+    d = 0.045  # ~5 km Box
+    params = {"service": "WFS", "version": "1.0.0", "request": "GetFeature",
+              "typeName": "MobiData-BW:charge_points",
+              "bbox": f"{lon-d},{lat-d},{lon+d},{lat+d}",
+              "outputFormat": "application/json", "maxFeatures": 30}
+    data, err = fetch_json("https://api.mobidata-bw.de/geoserver/MobiData-BW/ows",
+                           timeout=25, params=params)
+    if data is None:
+        return {"status": "offline", "error": err,
+                "quelle": "MobiData-BW (nicht erreichbar)"}
+    try:
+        saeulen = []
+        for f in data.get("features", []):
+            p = f.get("properties", {})
+            g = f.get("geometry", {})
+            coords = g.get("coordinates") or [None, None]
+            if coords[0] is None:
+                continue
+            kw = (p.get("max_electric_power") or 0) / 1000
+            saeulen.append({
+                "betreiber": p.get("operator_name") or "unbekannt",
+                "adresse": f"{p.get('address') or ''}, {p.get('postal_code') or ''} {p.get('city') or ''}".strip(", "),
+                "kw": round(kw, 1),
+                "schnell": kw >= 50,
+                "dist_km": round(haversine_km(lat, lon, coords[1], coords[0]), 1),
+                "lat": coords[1], "lon": coords[0]})
+        saeulen.sort(key=lambda s: s["dist_km"])
+        out = {"status": "live", "quelle": "MobiData-BW (MobiData BW, BNetzA-Daten)",
+               "cached": False, "saeulen": saeulen[:10]}
+        cache_put(ckey, out)
+        return out
+    except Exception as e:  # noqa: BLE001
+        return {"status": "fehler", "error": f"{type(e).__name__}: {e}",
+                "quelle": "MobiData-BW"}
+
+
 # ---------------- Modelle ----------------
 class StandortIn(BaseModel):
     label: str = Field(min_length=1, max_length=120)
@@ -1134,11 +1177,13 @@ def standort_reverse(lat: float = Query(ge=-90, le=90),
             f_pegel = ex.submit(pegel_live, lat, lon)
             f_osm = ex.submit(osm_live, lat, lon)
             f_amt = ex.submit(schutz_amtlich, lat, lon)
+            f_laden = ex.submit(ladesaeulen_live, lat, lon)
             boden, wetter, pegel, osm, amt = (f_boden.result(), f_wetter.result(),
                                               f_pegel.result(), f_osm.result(), f_amt.result())
+            laden = f_laden.result()
         return {"lat": lat, "lon": lon, "in_bw": in_bw,
                 "boden": boden, "wetter": wetter, "pegel": pegel, "umfeld": osm,
-                "behoerden": amt,
+                "behoerden": amt, "laden": laden,
                 "dauer_s": round(time.time() - t0, 1),
                 "attribution": ("Boden: SoilGrids/ISRIC CC-BY 4.0 · Wetter: Open-Meteo CC-BY 4.0 · "
                                 "Pegel: WSV PEGELONLINE · Karte/Daten: © OpenStreetMap ODbL · "
