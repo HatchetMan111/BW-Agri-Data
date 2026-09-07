@@ -343,6 +343,8 @@ function renderReport(d){
       <p style="margin:4px 0"><b>Bodenart: ${esc(b.bodenart||"–")}</b> <span class="small">(${esc(b.tiefe||"")})</span></p>
       ${texBar("Sand", b.sand_pct||0, "#d9b45b")}${texBar("Schluff", b.schluff_pct||0, "#9db87a")}${texBar("Ton", b.ton_pct||0, "#7a5b3a")}
       <p class="small">pH-Wert: <b>${b.ph==null?"–":b.ph}</b>${b.ph_wertung?" – "+esc(b.ph_wertung):""}${b.humus_g_kg!=null?` · Humus: <b>${b.humus_g_kg} g/kg</b>`:""}</p>
+      ${b.lgrb&&b.lgrb.gesamtbewertung?`<div class="tip">🏛️ <b>Behörde (LGRB BK50):</b> ${esc(b.lgrb.gesamtbewertung.einheit)} – ${esc(b.lgrb.gesamtbewertung.legende)}${b.lgrb.nfk&&b.lgrb.nfk.extra&&b.lgrb.nfk.extra["nfk-Wert"]?` · <b>nfk-Wert ${esc(b.lgrb.nfk.extra["nfk-Wert"])}</b> (nutzbare Feldkapazität)`:""}</div>`
+        :b.lgrb?`<p class="small">LGRB: keine Kartierung an diesem Punkt (z. B. Siedlung).</p>`:""}
       <details class="raw"><summary>Was bedeuten Sand, Schluff, Ton?</summary><p class="small">
       Das sind die <b>Korngrößen</b> des Bodens: <b>Sand</b> (2–0,063 mm, grob – lässt Wasser durch, hält kaum Nährstoffe),
       <b>Schluff</b> (0,063–0,002 mm, mittel – <b>speichert Wasser und Nährstoffe sehr gut</b>, verschlämmt aber bei Regen und bildet Krusten),
@@ -421,6 +423,7 @@ const GLOSSAR = [
 ["Bodenart", "Die Mischung aus Sand, Schluff und Ton – z. B. lehmiger Sand oder schluffiger Lehm. Sie bestimmt, wie der Boden Wasser hält, ob er sich leicht bearbeiten lässt und welche Kulturen passen. Faustregel: Extreme meiden, die lehmige Mitte ist am vielseitigsten."],
 ["pH-Wert", "Sagt, ob der Boden sauer oder alkalisch ist (Skala 0–14, 7 = neutral). Die meisten Gemüse mögen 6,0–7,2. Darunter: Kalk streuen. Darüber: eher kalkliebende Kulturen wie Kohl oder Lavendel."],
 ["Humus (g/kg)", "Der Gehalt an organischer Substanz – Futter für Bodenleben, Wasserspeicher und Nährstoffpuffer in einem. Über 20 g/kg ist gut. Aufbauen mit Kompost, Mulch und Gründüngung."],
+["Nutzbare Feldkapazität (nfk)", "Wie viel Wasser der Boden pflanzenverfügbar speichern kann (LGRB-Stufen). Hoch = übersteht Trockenphasen ohne Gießen; niedrig = bei Hitze wässern oder humusaufbauende Kulturen wählen."],
 ["Garten-Score / Acker-Score", "Unsere 0–100-Zusammenfassung: Boden, Klima, Hang, Umfeld und Schutzgebiete werden gewichtet verrechnet. Über 80 hervorragend, 65+ gut, 50+ mittel, darunter schwierig. Details stehen bei den Faktoren-Balken."],
 ["Ackerzahl", "Alte amtliche Kennzahl der Bodenschätzung (Skala grob 10–100): Je höher, desto ertragreicher der Acker. Unter 30 gilt als schwach, über 60 als sehr gut. Wichtig bei Kauf/Pacht."],
 ["Erosion", "Abtrag von Boden durch Wasser (Starkregen am Hang) oder Wind (offene Flächen). Schluffige Böden und Hänge über ~7 % sind gefährdet. Gegenmittel: Bodenbedeckung, Mulch, Querbewirtschaftung, Hecken."],

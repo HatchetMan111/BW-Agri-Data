@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -693,8 +693,10 @@ def agri_test(lat: float, lon: float) -> dict:
         f_hang = ex.submit(slope_live, lat, lon)
         f_osm = ex.submit(osm_live, lat, lon)
         f_amt = ex.submit(schutz_amtlich, lat, lon)
+        f_lgrb = ex.submit(boden_lgrb, lat, lon)
         boden, klima, hang, osm = f_boden.result(), f_klima.result(), f_hang.result(), f_osm.result()
         amt = f_amt.result()
+        lgrb = f_lgrb.result()
 
     faktoren: dict[str, dict] = {}
     ko = None
@@ -709,9 +711,11 @@ def agri_test(lat: float, lon: float) -> dict:
         if (boden.get("humus_g_kg") or 0) >= 20:
             s = min(100, s + 5)
         faktoren["boden"] = {"gewicht": 35, "wert": round(s),
-                             "text": f"{boden.get('bodenart')} · pH {boden.get('ph')} · Humus {boden.get('humus_g_kg')} g/kg",
+                             "text": f"{boden.get('bodenart')} · pH {boden.get('ph')} · Humus {boden.get('humus_g_kg')} g/kg" + (
+                                 f" · LGRB: {lgrb['gesamtbewertung']['einheit']} ({lgrb['gesamtbewertung']['legende'][:80]}…)"
+                                 if lgrb.get("gesamtbewertung") else ""),
                              "vertrauen": "mittel",
-                             "vertrauen_grund": "SoilGrids-Modell (250-m-Raster) – keine Bohrung, keine Ackerzahl"}
+                             "vertrauen_grund": "SoilGrids-Modell (250-m-Raster) + LGRB-Kartierung – keine Bohrung, keine Ackerzahl"}
     else:
         faktoren["boden"] = {"gewicht": 35, "wert": None,
                              "text": "Keine Bodendaten (versiegelt/offline)"}
@@ -1062,6 +1066,67 @@ def wald_test(lat: float, lon: float) -> dict:
                             "https://www.fva-bw.de – Punktabfrage folgt, sobald ein offener Dienst verfuegbar ist.")}
 
 
+LGRB_WMS = "https://services.lgrb-bw.de/ms/lgrb_geola_bod"
+
+
+def _lgrb_gfi(layer: str, lat: float, lon: float) -> dict:
+    """Punktabfrage LGRB-Bodenkarte (GFI text/plain, Key=Value ab der 3. Zeile)."""
+    import re as _re
+    d = 0.001
+    params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
+              "LAYERS": layer, "QUERY_LAYERS": layer, "CRS": "EPSG:4326",
+              "BBOX": f"{lat-d},{lon-d},{lat+d},{lon+d}", "WIDTH": 10, "HEIGHT": 10,
+              "I": 5, "J": 5, "FORMAT": "image/png", "INFO_FORMAT": "text/plain"}
+    try:
+        full = LGRB_WMS + "?" + urllib.parse.urlencode(params)
+        req = urllib.request.Request(full, headers=UA)
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            txt = resp.read().decode("utf-8", "ignore")
+    except Exception as e:  # noqa: BLE001
+        return {"status": "offline", "error": f"{type(e).__name__}: {e}"}
+    if "ServiceException" in txt:
+        return {"status": "fehler", "error": txt[:160]}
+    zeilen = [z.strip() for z in txt.splitlines() if z.strip().strip('"')]
+    # Format: Kopfzeile mit Spaltennamen ("Kartiereinheit" ...), danach Werte in Quotes
+    kopf, werte = [], []
+    for z in zeilen:
+        parts = _re.findall(r'"([^"]*)"', z)
+        if not parts:
+            continue
+        if not kopf and any("kartiereinheit" in p.lower() for p in parts):
+            kopf = [p.strip() for p in parts]
+        elif kopf and len(parts) == len(kopf):
+            werte = [p.strip() for p in parts]
+            break
+    if not werte:
+        return {"status": "live", "treffer": False}
+    rec = dict(zip(kopf, werte))
+    return {"status": "live", "treffer": True,
+            "einheit": rec.get("Kartiereinheit", ""),
+            "legende": rec.get("Legendentext", ""),
+            "extra": {k: v for k, v in rec.items()
+                      if k not in ("Kartiereinheit", "Legendentext", "Link") and v}}
+
+
+def boden_lgrb(lat: float, lon: float) -> dict:
+    ckey = f"lgrb:{round(lat,3)}:{round(lon,3)}"
+    hit = cache_get(ckey, 90 * 86400)
+    if hit is not None:
+        hit["cached"] = True
+        return hit
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_ges = ex.submit(_lgrb_gfi, "geola_bod_ke_gesbew_ln", lat, lon)
+        f_nfk = ex.submit(_lgrb_gfi, "geola_bod_ke_nfk", lat, lon)
+        ges, nfk = f_ges.result(), f_nfk.result()
+    out = {"status": "live" if "live" in (ges.get("status"), nfk.get("status")) else "offline",
+           "quelle": "LGRB GeoLa BK50 (DL-BY-2.0)", "cached": False,
+           "gesamtbewertung": ges if ges.get("treffer") else None,
+           "nfk": nfk if nfk.get("treffer") else None,
+           "fehler": "; ".join(x for x in (ges.get("error"), nfk.get("error")) if x) or None}
+    cache_put(ckey, out)
+    return out
+
+
 def ladesaeulen_live(lat: float, lon: float) -> dict:
     """Naechste E-Ladesaeulen (MobiData-BW WFS, GeoJSON, mit Leistung/Adresse)."""
     ckey = f"laden:{round(lat,2)}:{round(lon,2)}"
@@ -1178,9 +1243,11 @@ def standort_reverse(lat: float = Query(ge=-90, le=90),
             f_osm = ex.submit(osm_live, lat, lon)
             f_amt = ex.submit(schutz_amtlich, lat, lon)
             f_laden = ex.submit(ladesaeulen_live, lat, lon)
+            f_lgrb = ex.submit(boden_lgrb, lat, lon)
             boden, wetter, pegel, osm, amt = (f_boden.result(), f_wetter.result(),
                                               f_pegel.result(), f_osm.result(), f_amt.result())
-            laden = f_laden.result()
+            laden, lgrb = f_laden.result(), f_lgrb.result()
+        boden["lgrb"] = lgrb
         return {"lat": lat, "lon": lon, "in_bw": in_bw,
                 "boden": boden, "wetter": wetter, "pegel": pegel, "umfeld": osm,
                 "behoerden": amt, "laden": laden,
