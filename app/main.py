@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.8.2"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -132,7 +132,45 @@ def fetch_json(url: str, timeout: int = 12, params: dict | None = None,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8")), ""
     except Exception as e:  # noqa: BLE001 - Offline-Fallback ist Konzept
-        return None, f"{type(e).__name__}: {e}"
+        return None, _freundlicher_fehler(e)
+
+
+def _freundlicher_fehler(e: Exception) -> str:
+    name = type(e).__name__
+    txt = str(e)
+    if "429" in txt or "Too Many Requests" in txt:
+        return ("HTTP 429: Kartendienst ist gerade ueberlastet (Zugriffsbegrenzung). "
+                "Wenige Minuten warten – danach antwortet meist der Cache.")
+    if "Timeout" in name or "timed out" in txt:
+        return f"{name}: Dienst antwortet zu langsam (Timeout) – spaeter erneut versuchen."
+    if "URLError" in name or "NameResolution" in txt or "nodename" in txt:
+        return f"{name}: Keine Verbindung (DNS/Netz) – Internet im LXC pruefen."
+    return f"{name}: {txt[:160]}"
+
+
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
+
+
+def overpass_post(query: bytes, timeout: int = 60) -> tuple[dict | None, str]:
+    """Overpass mit Mirror-Fallback + 1 Retry bei 429. Gibt (daten, fehler) zurueck."""
+    letzter_fehler = ""
+    for url in OVERPASS_URLS:
+        for versuch in (1, 2):
+            try:
+                req = urllib.request.Request(url, data=query, headers=UA, method="POST")
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8")), ""
+            except Exception as e:  # noqa: BLE001
+                letzter_fehler = _freundlicher_fehler(e)
+                if "429" in str(e) and versuch == 1:
+                    time.sleep(4)
+                    continue
+                break
+    return None, letzter_fehler or "Unbekannter Overpass-Fehler"
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -350,8 +388,7 @@ def osm_live(lat: float, lon: float) -> dict:
         f"node[\"natural\"~\"^(peak|cave_entrance)$\"](around:10000,{lat},{lon}););out tags center 60;",
     ]
     q = "[out:json][timeout:40];" + "".join(stmts)
-    data, err = fetch_json("https://overpass-api.de/api/interpreter", timeout=60,
-                           data=q.encode("utf-8"))
+    data, err = overpass_post(q.encode("utf-8"), timeout=75)
     if data is None:
         return {"status": "offline", "error": err, "quelle": "OpenStreetMap (nicht erreichbar)"}
     try:

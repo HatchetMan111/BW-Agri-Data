@@ -6,64 +6,109 @@
 <title>heimgrund – Grundstück + Garten</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{color-scheme:light dark}
+:root{
+  color-scheme:light dark;
+  --bg:#0d1319; --bg2:#111927; --card:rgba(255,255,255,.035);
+  --line:#263448; --line2:#33475e; --txt:#e9eff5; --mut:#93a3b5;
+  --grn:#35a05f; --grn-d:#1d4d2c; --amb:#d99a2b; --amb-d:#4d3a12;
+  --blu:#5aa2e0; --blu-d:#1c3a52; --red:#e06c6c; --red-d:#521d1d;
+  --link:#7ab8ff; --r:16px; --sh:0 6px 24px rgba(0,0,0,.28);
+}
+@media(prefers-color-scheme:light){
+  :root{--bg:#eef2f6; --bg2:#ffffff; --card:#ffffff;
+    --line:#d8e0e9; --line2:#b9c6d4; --txt:#17222e; --mut:#5b6d80;
+    --grn-d:#d8f0e0; --amb-d:#f7ecd2; --blu-d:#ddeefc; --red-d:#f9dede;
+    --link:#0b5fc0; --sh:0 4px 16px rgba(20,40,60,.10)}
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;background:#0f1419;color:#e8edf2}
-@media(prefers-color-scheme:light){body{background:#f4f6f8;color:#16202a}}
-header{padding:16px 20px;border-bottom:1px solid #2a3642}
-header h1{margin:0;font-size:20px}
-header p{margin:4px 0 0;opacity:.75;font-size:13px}
-nav{display:flex;gap:8px;padding:12px 20px;flex-wrap:wrap}
-nav button{padding:8px 14px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit;cursor:pointer;font:inherit}
-nav button.active{background:#2f7d4f;border-color:#2f7d4f;color:#fff}
-main{padding:0 20px 48px;max-width:1020px}
-.card{border:1px solid #2a3642;border-radius:12px;padding:14px 16px;margin:12px 0;background:rgba(255,255,255,.03)}
-.card h3{margin:0 0 8px;font-size:15px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+  background:radial-gradient(1200px 500px at 80% -10%,rgba(53,160,95,.10),transparent 60%),var(--bg);
+  color:var(--txt);line-height:1.5}
+header{padding:18px 20px 14px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb, var(--bg2) 82%, transparent);
+  backdrop-filter:blur(8px)}
+header h1{margin:0;font-size:22px;letter-spacing:.2px}
+header p{margin:4px 0 0;color:var(--mut);font-size:13px}
+nav{display:flex;gap:8px;padding:12px 20px;flex-wrap:wrap;position:sticky;top:0;z-index:500;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{padding:9px 15px;border-radius:999px;border:1px solid var(--line2);
+  background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap;
+  transition:transform .06s ease, background .15s}
+nav button:hover{border-color:var(--grn)}
+nav button:active{transform:scale(.97)}
+nav button.active{background:var(--grn);border-color:var(--grn);color:#fff;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.4)}
+main{padding:4px 20px 56px;max-width:1060px;margin:0 auto}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin:14px 0;
+  background:var(--card);box-shadow:var(--sh)}
+.card h3{margin:0 0 10px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
 .grid .card{margin:0}
-.badge{display:inline-block;font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid #3a4a5a;margin:2px 4px 2px 0;white-space:nowrap}
-.badge.ok{background:#1d4d2c;border-color:#2f7d4f;color:#d8f3dc}
-.badge.warn{background:#4d3a12;border-color:#a97b1f;color:#ffe8b3}
-.badge.info{background:#1c3a52;border-color:#3a7ab5;color:#cfe8ff}
-.badge.bad{background:#521d1d;border-color:#b53a3a;color:#ffd7d7}
+.badge{display:inline-block;font-size:12px;padding:3px 11px;border-radius:999px;
+  border:1px solid var(--line2);margin:2px 4px 2px 0;white-space:nowrap;font-weight:600}
+.badge.ok{background:var(--grn-d);border-color:var(--grn);color:var(--txt)}
+.badge.warn{background:var(--amb-d);border-color:var(--amb);color:var(--txt)}
+.badge.info{background:var(--blu-d);border-color:var(--blu);color:var(--txt)}
+.badge.bad{background:var(--red-d);border-color:var(--red);color:var(--txt)}
+.badge.gray{background:transparent}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media(max-width:560px){.row{grid-template-columns:1fr}}
-label{display:block;margin:8px 0 4px;font-size:13px;opacity:.85}
-input,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit;font:inherit}
-button.primary{background:#2f7d4f;color:#fff;border:0;padding:10px 16px;border-radius:8px;cursor:pointer;margin:10px 8px 0 0;font:inherit}
-button.secondary{background:transparent;color:inherit;border:1px solid #3a4a5a;padding:10px 16px;border-radius:8px;cursor:pointer;margin:10px 8px 0 0;font:inherit}
-button.danger{background:transparent;color:#ff9d9d;border:1px solid #7a3030;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+label{display:block;margin:8px 0 4px;font-size:13px;color:var(--mut)}
+input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);
+  background:transparent;color:inherit;font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--grn);outline-offset:1px;border-color:var(--grn)}
+button.primary{background:linear-gradient(180deg,#3aa468,#2c7a4c);color:#fff;border:0;
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0;font:inherit;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.35)}
+button.primary:disabled{opacity:.55;cursor:wait}
+button.secondary{background:transparent;color:inherit;border:1px solid var(--line2);
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0;font:inherit}
+button.secondary:hover{border-color:var(--grn)}
+button.danger{background:transparent;color:var(--red);border:1px solid var(--red);
+  padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px}
 ul.clean{list-style:none;padding:0;margin:8px 0}
-ul.clean li{padding:8px 0;border-bottom:1px solid #2a3642;font-size:14px}
+ul.clean li{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
 ul.clean li:last-child{border-bottom:0}
-.chip{display:inline-block;background:#1d4d2c;border:1px solid #2f7d4f;color:#d8f3dc;border-radius:8px;padding:6px 12px;margin:4px 6px 4px 0;font-size:14px}
-.chip.gray{background:transparent;border-color:#3a4a5a;color:inherit}
-.tip{font-size:13px;background:rgba(47,125,79,.12);border-left:3px solid #2f7d4f;padding:8px 12px;border-radius:0 8px 8px 0;margin:8px 0}
-.warnbox{font-size:13px;background:rgba(185,60,60,.12);border-left:3px solid #b53a3a;padding:8px 12px;border-radius:0 8px 8px 0;margin:8px 0}
-.small{font-size:12px;opacity:.7}
-.err{background:#521d1d;border:1px solid #b53a3a;border-radius:8px;padding:10px 14px;font-size:14px}
-.loading{opacity:.6;font-style:italic}
-#map{height:300px;border-radius:12px;border:1px solid #2a3642;z-index:0}
-.bar{height:10px;border-radius:6px;background:#2a3642;overflow:hidden;margin:4px 0 8px}
-.bar>i{display:block;height:100%;border-radius:6px}
+.chip{display:inline-block;background:var(--grn-d);border:1px solid var(--grn);
+  border-radius:9px;padding:6px 12px;margin:4px 6px 4px 0;font-size:14px}
+.chip.gray{background:transparent;border-color:var(--line2);color:inherit}
+.tip{font-size:13px;background:color-mix(in srgb, var(--grn) 12%, transparent);
+  border-left:3px solid var(--grn);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.warnbox{font-size:13px;background:color-mix(in srgb, var(--red) 12%, transparent);
+  border-left:3px solid var(--red);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.small{font-size:12px;color:var(--mut)}
+.err{background:var(--red-d);border:1px solid var(--red);border-radius:10px;
+  padding:11px 15px;font-size:14px}
+.loading{color:var(--mut);font-style:italic;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+#map{height:340px;border-radius:var(--r);border:1px solid var(--line);z-index:0}
+.bar{height:12px;border-radius:7px;background:color-mix(in srgb, var(--txt) 12%, transparent);
+  overflow:hidden;margin:5px 0 9px}
+.bar>i{display:block;height:100%;border-radius:7px;transition:width .5s ease}
 .bignum{font-size:34px;font-weight:700;margin:2px 0}
+.ringwrap{display:flex;align-items:center;gap:16px;justify-content:center;flex-wrap:wrap}
+.ringmeta{text-align:left;min-width:200px}
 .fcast{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.fday{flex:1 1 100px;border:1px solid #2a3642;border-radius:10px;padding:8px;text-align:center;font-size:13px}
-.fday .ic{font-size:24px}
-.searchres{border:1px solid #3a4a5a;border-radius:8px;margin-top:6px;overflow:hidden}
-.searchres div{padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid #2a3642}
+.fday{flex:1 1 100px;border:1px solid var(--line);border-radius:12px;padding:9px;
+  text-align:center;font-size:13px;background:var(--card)}
+.fday .ic{font-size:26px}
+.searchres{border:1px solid var(--line2);border-radius:10px;margin-top:6px;overflow:hidden}
+.searchres div{padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
 .searchres div:last-child{border-bottom:0}
-.searchres div:hover{background:rgba(122,184,255,.12)}
+.searchres div:hover{background:color-mix(in srgb, var(--blu) 14%, transparent)}
 details.raw{margin-top:10px;font-size:12px}
-details.raw summary{cursor:pointer;opacity:.6}
-details.raw pre{white-space:pre-wrap;font-size:11px;opacity:.75;max-height:300px;overflow:auto}
-footer{padding:16px 20px;font-size:12px;opacity:.6;border-top:1px solid #2a3642}
-a{color:#7ab8ff}
+details.raw summary{cursor:pointer;color:var(--mut);padding:6px 0}
+details.raw pre{white-space:pre-wrap;font-size:11px;opacity:.8;max-height:300px;overflow:auto}
+footer{padding:16px 20px;font-size:12px;color:var(--mut);border-top:1px solid var(--line)}
+a{color:var(--link)}
 svg.spark{width:100%;height:56px;display:block}
+svg.ring{width:132px;height:132px}
 @media print{
   header nav, nav, #map, button, .searchres, details.raw, footer{display:none !important}
   body{background:#fff;color:#000}
-  .card{border:1px solid #999;background:#fff;color:#000;break-inside:avoid}
+  .card{border:1px solid #999;background:#fff;color:#000;break-inside:avoid;box-shadow:none}
   main{max-width:100%;padding:0}
   a{color:#000;text-decoration:none}
 }
@@ -522,9 +567,8 @@ function renderBau(b){
   const denk = (b.denkmal||[]).filter(o=>o.treffer).map(o=>`<li>🏛️ <b>${esc(o.label)}</b><br><span class="small">${esc(o.beschreibung||"")}</span></li>`).join("");
   return `
   ${ko}
-  <div class="card" style="text-align:center">
-    <div class="bignum" style="color:${scoreColor(b.score)};font-size:52px">${b.score==null?"?":b.score}<span class="small">/100</span></div>
-    <div>${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span></div>
+  <div class="card">
+    ${scoreRing(b.score, b.ampel==="gruen"?"Unauffällig":b.ampel==="gelb"?"Auflagen prüfen":"K.O. – klären", `${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span>`)}
   </div>
   <div><button class="secondary" onclick="window.print()">🖨️ Exposé drucken</button></div>
   ${aussageBox(b.aussagekraft, b.gegenwert)}
@@ -546,10 +590,8 @@ function renderWald(w){
   const bars = Object.entries(w.faktoren||{}).map(([k,f])=>faktorBar(fn[k]||k, f)).join("");
   const hin = (w.hinweise||[]).map(h=>`<div class="tip">💡 ${esc(h)}</div>`).join("");
   return `
-  <div class="card" style="text-align:center">
-    <div class="bignum" style="color:${scoreColor(w.score)};font-size:52px">${w.score==null?"?":w.score}<span class="small">/100</span></div>
-    <div><span class="badge ${w.score>=70?"ok":w.score>=45?"warn":"bad"}">${esc(w.label)}</span>
-    <span class="small">${esc(w.lat)}, ${esc(w.lon)} · ${w.dauer_s}s</span></div>
+  <div class="card">
+    ${scoreRing(w.score, w.label, `<span class="small">${esc(w.lat)}, ${esc(w.lon)} · ${w.dauer_s}s</span>`)}
   </div>
   ${aussageBox(w.aussagekraft, w.gegenwert)}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
@@ -569,6 +611,21 @@ async function checkAgri(){
 function scoreColor(s){
   if(s==null) return "#888";
   return s>=80 ? "#2f7d4f" : s>=65 ? "#7ab54a" : s>=50 ? "#a97b1f" : "#b53a3a";
+}
+function scoreRing(score, label, sub){
+  if(score==null) return `<div class="bignum">?<div class="small">${esc(label||"")}</div></div>`;
+  const col = scoreColor(score), r = 54, c = 2*Math.PI*r,
+        off = c*(1-Math.max(0,Math.min(100,score))/100);
+  return `<div class="ringwrap">
+    <svg class="ring" viewBox="0 0 132 132" role="img" aria-label="Score ${score} von 100">
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="currentColor" opacity=".15" stroke-width="12"/>
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round"
+        stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 66 66)"/>
+      <text x="66" y="62" text-anchor="middle" font-size="30" font-weight="700" fill="currentColor">${score}</text>
+      <text x="66" y="82" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">/ 100</text>
+    </svg>
+    <div class="ringmeta"><div style="font-size:17px;font-weight:700">${esc(label||"")}</div>
+    <div class="small">${sub||""}</div></div></div>`;
 }
 function vertDot(v){
   if(v==="hoch") return ' <span class="badge ok" title="Amtliche Messung / Fachdaten">● belastbar</span>';
@@ -601,10 +658,8 @@ function renderAgri(a){
   }).join("");
   return `
   ${a.ko_kriterium?`<div class="card"><div class="warnbox">🛑 <b>K.O.:</b> ${esc(a.ko_kriterium)}</div></div>`:""}
-  <div class="card" style="text-align:center">
-    <div class="bignum" style="color:${col};font-size:52px">${a.score==null?"?":a.score}<span class="small">/100</span></div>
-    <div><span class="badge ${a.score>=65?"ok":a.score>=50?"warn":"bad"}">${esc(a.label)}</span>
-    <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span></div>
+  <div class="card">
+    ${scoreRing(a.score, a.label, `<span class="badge ${a.score>=65?"ok":a.score>=50?"warn":"bad"}">${esc(a.label)}</span> <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span>`)}
   </div>
   ${aussageBox(a.aussagekraft, a.gegenwert)}
   <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
