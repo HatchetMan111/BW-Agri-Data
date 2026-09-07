@@ -22,6 +22,7 @@ ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 | 🏛️ Behörden-Check | Punktabfrage (±50 m) in LUBW-Fachdaten: NSG, FFH, LSG, WSG, FFH-Mähwiesen, Überschwemmungsgebiete — mit Gebietsnamen |
 | 🏗️ Bau-Check | Erwerbs-Einschätzung: K.O. (ÜSG/NSG/FFH), Denkmalschutz (LAD live), Lärm-Abstände, Starkregentage (ERA5), Hang, Lage-Score (Bus/Bahn/Einkauf/Schule/Arzt) + Kauf-Checkliste |
 | 🌲 Wald | Waldanteil + Laub/Nadel (OSM), Klimafitness, Sturmsicherheit, Boden-Hinweis |
+| 🗺️ Karten-Overlays | Luftbild DOP 20cm (LGL) + FVA-Layer (Bestockung, Sturmrisiko, Buchdrucker) direkt in der Karte |
 
 ## Einzeiler (Proxmox-Host als root)
 

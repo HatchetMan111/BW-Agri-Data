@@ -97,7 +97,7 @@ svg.spark{width:100%;height:56px;display:block}
 <button class="secondary" onclick="save()">Als Standort speichern</button>
 </div>
 </div>
-<div class="card"><h3>🗺️ Karte <span class="small">(Klick setzt den Punkt)</span></h3><div id="map"></div>
+<div class="card"><h3>🗺️ Karte <span class="small">(Klick setzt den Punkt · rechts oben: Luftbild &amp; Fachlayer)</span></h3><div id="map"></div>
 <p id="mapfallback" class="small" style="display:none">Karte offline – <span id="osmlink"></span></p></div>
 <div id="result"></div>
 <div class="card"><h3>💾 Gespeicherte Standorte</h3><ul id="sites" class="clean"><li class="small">Noch keine.</li></ul><button class="secondary" onclick="loadSites()">Neu laden</button></div>
@@ -187,7 +187,20 @@ function initMap(lat, lon){
   document.getElementById("osmlink").innerHTML = `<a href="${osmUrl(lat,lon)}" target="_blank" rel="noopener">Auf OpenStreetMap zeigen ↗</a>`;
   if(typeof L === "undefined"){ document.getElementById("map").style.display="none"; document.getElementById("mapfallback").style.display="block"; return; }
   map = L.map("map").setView([lat, lon], 12);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+  const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+  const luft = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DOP_20_C", {
+    layers:"IMAGES_DOP_20_RGB", version:"1.3.0", format:"image/png", transparent:false,
+    attribution:"DOP 20cm © LGL-BW (DL-BY-2.0)"});
+  const wmsOpt = {version:"1.3.0", format:"image/png", transparent:true, opacity:.55};
+  const bestock = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Fernerkundung_Waldbestockung",
+    {...wmsOpt, layers:"fern_bestockungslayer", attribution:"Waldbestockung © FVA-BW"});
+  const sturm = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Sturm",
+    {...wmsOpt, layers:"sturmschadensrisiko_real_fichte", attribution:"Sturmrisiko © FVA-BW"});
+  const kaefer = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Buchdruckergefaehrdung",
+    {...wmsOpt, layers:"buchdruckerrisiko_rcp85_2021_2050", attribution:"Buchdrucker © FVA-BW"});
+  L.control.layers({"Karte (OSM)": osm, "Luftbild (DOP 20cm)": luft},
+    {"🌲 Waldbestockung (FVA)": bestock, "🌪️ Sturmrisiko Fichte": sturm, "🪲 Buchdrucker 2021–50": kaefer},
+    {collapsed: false}).addTo(map);
   marker = L.marker([lat, lon], {draggable:true}).addTo(map);
   marker.on("dragend", ()=>{ const p=marker.getLatLng(); setCoords(p.lat, p.lng); });
   map.on("click", e=>{ setCoords(e.latlng.lat, e.latlng.lng); });

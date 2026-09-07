@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
