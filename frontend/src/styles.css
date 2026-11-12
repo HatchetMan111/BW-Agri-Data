@@ -1,0 +1,142 @@
+/* heimgrund – Design-System (light/dark per System) */
+:root{
+  color-scheme:light dark;
+  --bg:#0d1319; --bg2:#111927; --card:rgba(255,255,255,.035); --card-solid:#141d2b;
+  --line:#263448; --line2:#33475e; --txt:#e9eff5; --mut:#93a3b5;
+  --grn:#35a05f; --grn-d:#1d4d2c; --amb:#d99a2b; --amb-d:#4d3a12;
+  --blu:#5aa2e0; --blu-d:#1c3a52; --red:#e06c6c; --red-d:#521d1d;
+  --link:#7ab8ff; --r:16px; --sh:0 6px 24px rgba(0,0,0,.28);
+  --sand:#d9b45b; --schluff:#9db87a; --ton:#7a5b3a;
+}
+@media(prefers-color-scheme:light){
+  :root{--bg:#eef2f6; --bg2:#ffffff; --card:#ffffff; --card-solid:#ffffff;
+    --line:#d8e0e9; --line2:#b9c6d4; --txt:#17222e; --mut:#5b6d80;
+    --grn-d:#d8f0e0; --amb-d:#f7ecd2; --blu-d:#ddeefc; --red-d:#f9dede;
+    --link:#0b5fc0; --sh:0 4px 16px rgba(20,40,60,.10)}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+  background:radial-gradient(1200px 500px at 80% -10%,rgba(53,160,95,.10),transparent 60%),var(--bg);
+  color:var(--txt);line-height:1.5}
+a{color:var(--link)}
+h1,h2,h3{line-height:1.25}
+button{font:inherit}
+:focus-visible{outline:2px solid var(--grn);outline-offset:2px;border-radius:6px}
+
+/* ---------- Kopf + Tabs ---------- */
+.apphead{padding:20px 20px 14px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--bg2) 82%,transparent);backdrop-filter:blur(8px);
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.apphead h1{margin:0;font-size:22px;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
+.apphead .sub{color:var(--mut);font-size:13px;margin:0}
+.verchip{font-size:11px;border:1px solid var(--line2);border-radius:999px;padding:2px 9px;color:var(--mut)}
+.verchip.ok{border-color:var(--grn);color:var(--txt)}
+.verchip.bad{border-color:var(--red)}
+.tabs{display:flex;gap:8px;padding:12px 20px;flex-wrap:wrap;position:sticky;top:0;z-index:900;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line)}
+.tabs button{padding:9px 15px;border-radius:999px;border:1px solid var(--line2);
+  background:transparent;color:inherit;cursor:pointer;white-space:nowrap;
+  transition:transform .06s ease,background .15s,border-color .15s}
+.tabs button:hover{border-color:var(--grn)}
+.tabs button:active{transform:scale(.97)}
+.tabs button.active{background:var(--grn);border-color:var(--grn);color:#fff;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.4)}
+main{padding:6px 20px 64px;max-width:1080px;margin:0 auto}
+
+/* ---------- Karten / Grid ---------- */
+.card{border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin:14px 0;
+  background:var(--card);box-shadow:var(--sh)}
+.card h3{margin:0 0 10px;font-size:15px}
+.card h3 .small{font-weight:400}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.grid .card{margin:0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row.even{grid-template-columns:1fr auto}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+label{display:block;margin:8px 0 4px;font-size:13px;color:var(--mut)}
+input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);
+  background:transparent;color:inherit;font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--grn);outline-offset:1px;border-color:var(--grn)}
+
+/* ---------- Buttons ---------- */
+button.primary{background:linear-gradient(180deg,#3aa468,#2c7a4c);color:#fff;border:0;
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.35)}
+button.primary:disabled{opacity:.55;cursor:wait}
+button.secondary{background:transparent;color:inherit;border:1px solid var(--line2);
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0}
+button.secondary:hover{border-color:var(--grn)}
+button.danger{background:transparent;color:var(--red);border:1px solid var(--red);
+  padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+.linkbtn{background:none;border:none;color:var(--link);cursor:pointer;padding:0;font-size:13px}
+.linkbtn.red{color:var(--red)}
+
+/* ---------- Badges / Chips / Listen ---------- */
+.badge{display:inline-block;font-size:12px;padding:3px 11px;border-radius:999px;
+  border:1px solid var(--line2);margin:2px 4px 2px 0;white-space:nowrap;font-weight:600}
+.badge.ok{background:var(--grn-d);border-color:var(--grn)}
+.badge.warn{background:var(--amb-d);border-color:var(--amb)}
+.badge.info{background:var(--blu-d);border-color:var(--blu)}
+.badge.bad{background:var(--red-d);border-color:var(--red)}
+.badge.gray{background:transparent}
+.chip{display:inline-block;background:var(--grn-d);border:1px solid var(--grn);
+  border-radius:9px;padding:6px 12px;margin:4px 6px 4px 0;font-size:14px}
+.chip.gray{background:transparent;border-color:var(--line2);color:inherit}
+ul.clean{list-style:none;padding:0;margin:8px 0}
+ul.clean li{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+ul.clean li:last-child{border-bottom:0}
+
+/* ---------- Hinweisboxen ---------- */
+.tip{font-size:13px;background:color-mix(in srgb,var(--grn) 12%,transparent);
+  border-left:3px solid var(--grn);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.warnbox{font-size:13px;background:color-mix(in srgb,var(--red) 12%,transparent);
+  border-left:3px solid var(--red);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.small{font-size:12px;color:var(--mut)}
+.err{background:var(--red-d);border:1px solid var(--red);border-radius:10px;
+  padding:11px 15px;font-size:14px}
+.loading{color:var(--mut);font-style:italic;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.skeleton{border-radius:10px;height:14px;margin:10px 0;
+  background:linear-gradient(90deg,var(--line) 25%,var(--line2) 50%,var(--line) 75%);
+  background-size:200% 100%;animation:shimmer 1.3s infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
+
+/* ---------- Map / Diagramme ---------- */
+#map{height:360px;border-radius:var(--r);border:1px solid var(--line);z-index:0}
+.leaflet-container{font:inherit}
+.bar{height:12px;border-radius:7px;background:color-mix(in srgb,var(--txt) 12%,transparent);
+  overflow:hidden;margin:5px 0 9px}
+.bar>i{display:block;height:100%;border-radius:7px;transition:width .5s ease}
+.bignum{font-size:34px;font-weight:700;margin:2px 0}
+.ringwrap{display:flex;align-items:center;gap:16px;justify-content:center;flex-wrap:wrap}
+.ringmeta{text-align:left;min-width:200px}
+.fcast{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.fday{flex:1 1 100px;border:1px solid var(--line);border-radius:12px;padding:9px;
+  text-align:center;font-size:13px;background:var(--card)}
+.fday .ic{font-size:26px}
+.fday.today{border-color:var(--grn)}
+svg.spark{width:100%;height:56px;display:block}
+svg.ring{width:132px;height:132px}
+.searchres{border:1px solid var(--line2);border-radius:10px;margin-top:6px;overflow:hidden}
+.searchres>div{padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
+.searchres>div:last-child{border-bottom:0}
+.searchres>div:hover{background:color-mix(in srgb,var(--blu) 14%,transparent)}
+details.raw{margin-top:10px;font-size:12px}
+details.raw summary{cursor:pointer;color:var(--mut);padding:6px 0}
+details.raw pre{white-space:pre-wrap;font-size:11px;opacity:.8;max-height:300px;overflow:auto}
+.checklist label{display:flex;gap:9px;align-items:flex-start;margin:0;cursor:pointer;color:var(--txt);font-size:14px}
+.checklist input[type=checkbox]{width:auto;margin-top:4px;accent-color:var(--grn)}
+footer{padding:16px 20px;font-size:12px;color:var(--mut);border-top:1px solid var(--line)}
+
+/* ---------- Exposé-Druck ---------- */
+@media print{
+  .tabs,.apphead,.no-print,footer,#map,button,.searchres,details.raw{display:none !important}
+  body{background:#fff;color:#000}
+  .card{border:1px solid #999;background:#fff;color:#000;break-inside:avoid;box-shadow:none}
+  main{max-width:100%;padding:0}
+  a{color:#000;text-decoration:none}
+  .badge{border-color:#666}
+  .fday{border-color:#999}
+}

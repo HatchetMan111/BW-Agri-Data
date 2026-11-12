@@ -15,7 +15,7 @@ set -euo pipefail
 # ---------------- Variablen (oben, anpassbar) ----------------
 # HINWEIS: bewusst CT_HOSTNAME statt HOSTNAME (letzteres ist auf vielen
 # Hosts bereits auf den Node-Namen gesetzt und wuerde den Default ueberstimmen).
-INSTALLER_VERSION="0.5.0"
+INSTALLER_VERSION="0.6.0"
 CTID="${CTID:-150}"
 CT_HOSTNAME="${CT_HOSTNAME:-heimgrund}"
 TEMPLATE="${TEMPLATE:-}"     # leer = automatisch suchen/laden (Debian 13)
@@ -233,7 +233,12 @@ main(){
     pct exec "$CTID" -- mkdir -p /opt/heimgrund/app/static /opt/heimgrund/systemd
     pct push "$CTID" app/main.py /opt/heimgrund/app/main.py
     pct push "$CTID" app/requirements.txt /opt/heimgrund/app/requirements.txt
-    pct push "$CTID" app/static/index.html /opt/heimgrund/app/static/index.html
+    # Frontend-Build komplett (index.html + assets/) ueber tar-stdin pushen
+    if [[ -f "app/static/index.html" ]]; then
+      tar -C app/static -cf - . | pct exec "$CTID" -- tar -xf - -C /opt/heimgrund/app/static
+    else
+      echo "WARN: app/static/index.html fehlt (npm run build in frontend/ ausfuehren)."
+    fi
     pct push "$CTID" systemd/heimgrund.service /opt/heimgrund/systemd/heimgrund.service
     # Repo-Klon im CT ueberspringen -> leeres REPO signalisieren
     REPO="" setup_in_ct

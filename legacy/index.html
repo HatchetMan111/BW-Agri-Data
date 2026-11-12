@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>heimgrund – Grundstück + Garten</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#0d1319; --bg2:#111927; --card:rgba(255,255,255,.035);
+  --line:#263448; --line2:#33475e; --txt:#e9eff5; --mut:#93a3b5;
+  --grn:#35a05f; --grn-d:#1d4d2c; --amb:#d99a2b; --amb-d:#4d3a12;
+  --blu:#5aa2e0; --blu-d:#1c3a52; --red:#e06c6c; --red-d:#521d1d;
+  --link:#7ab8ff; --r:16px; --sh:0 6px 24px rgba(0,0,0,.28);
+}
+@media(prefers-color-scheme:light){
+  :root{--bg:#eef2f6; --bg2:#ffffff; --card:#ffffff;
+    --line:#d8e0e9; --line2:#b9c6d4; --txt:#17222e; --mut:#5b6d80;
+    --grn-d:#d8f0e0; --amb-d:#f7ecd2; --blu-d:#ddeefc; --red-d:#f9dede;
+    --link:#0b5fc0; --sh:0 4px 16px rgba(20,40,60,.10)}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;
+  background:radial-gradient(1200px 500px at 80% -10%,rgba(53,160,95,.10),transparent 60%),var(--bg);
+  color:var(--txt);line-height:1.5}
+header{padding:18px 20px 14px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb, var(--bg2) 82%, transparent);
+  backdrop-filter:blur(8px)}
+header h1{margin:0;font-size:22px;letter-spacing:.2px}
+header p{margin:4px 0 0;color:var(--mut);font-size:13px}
+nav{display:flex;gap:8px;padding:12px 20px;flex-wrap:wrap;position:sticky;top:0;z-index:500;
+  background:color-mix(in srgb, var(--bg) 88%, transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{padding:9px 15px;border-radius:999px;border:1px solid var(--line2);
+  background:transparent;color:inherit;cursor:pointer;font:inherit;white-space:nowrap;
+  transition:transform .06s ease, background .15s}
+nav button:hover{border-color:var(--grn)}
+nav button:active{transform:scale(.97)}
+nav button.active{background:var(--grn);border-color:var(--grn);color:#fff;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.4)}
+main{padding:4px 20px 56px;max-width:1060px;margin:0 auto}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin:14px 0;
+  background:var(--card);box-shadow:var(--sh)}
+.card h3{margin:0 0 10px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.grid .card{margin:0}
+.badge{display:inline-block;font-size:12px;padding:3px 11px;border-radius:999px;
+  border:1px solid var(--line2);margin:2px 4px 2px 0;white-space:nowrap;font-weight:600}
+.badge.ok{background:var(--grn-d);border-color:var(--grn);color:var(--txt)}
+.badge.warn{background:var(--amb-d);border-color:var(--amb);color:var(--txt)}
+.badge.info{background:var(--blu-d);border-color:var(--blu);color:var(--txt)}
+.badge.bad{background:var(--red-d);border-color:var(--red);color:var(--txt)}
+.badge.gray{background:transparent}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+label{display:block;margin:8px 0 4px;font-size:13px;color:var(--mut)}
+input,textarea,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);
+  background:transparent;color:inherit;font:inherit}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--grn);outline-offset:1px;border-color:var(--grn)}
+button.primary{background:linear-gradient(180deg,#3aa468,#2c7a4c);color:#fff;border:0;
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0;font:inherit;font-weight:600;
+  box-shadow:0 2px 10px rgba(53,160,95,.35)}
+button.primary:disabled{opacity:.55;cursor:wait}
+button.secondary{background:transparent;color:inherit;border:1px solid var(--line2);
+  padding:11px 18px;border-radius:10px;cursor:pointer;margin:10px 8px 0 0;font:inherit}
+button.secondary:hover{border-color:var(--grn)}
+button.danger{background:transparent;color:var(--red);border:1px solid var(--red);
+  padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+ul.clean{list-style:none;padding:0;margin:8px 0}
+ul.clean li{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+ul.clean li:last-child{border-bottom:0}
+.chip{display:inline-block;background:var(--grn-d);border:1px solid var(--grn);
+  border-radius:9px;padding:6px 12px;margin:4px 6px 4px 0;font-size:14px}
+.chip.gray{background:transparent;border-color:var(--line2);color:inherit}
+.tip{font-size:13px;background:color-mix(in srgb, var(--grn) 12%, transparent);
+  border-left:3px solid var(--grn);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.warnbox{font-size:13px;background:color-mix(in srgb, var(--red) 12%, transparent);
+  border-left:3px solid var(--red);padding:9px 13px;border-radius:0 10px 10px 0;margin:9px 0}
+.small{font-size:12px;color:var(--mut)}
+.err{background:var(--red-d);border:1px solid var(--red);border-radius:10px;
+  padding:11px 15px;font-size:14px}
+.loading{color:var(--mut);font-style:italic;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+#map{height:340px;border-radius:var(--r);border:1px solid var(--line);z-index:0}
+.bar{height:12px;border-radius:7px;background:color-mix(in srgb, var(--txt) 12%, transparent);
+  overflow:hidden;margin:5px 0 9px}
+.bar>i{display:block;height:100%;border-radius:7px;transition:width .5s ease}
+.bignum{font-size:34px;font-weight:700;margin:2px 0}
+.ringwrap{display:flex;align-items:center;gap:16px;justify-content:center;flex-wrap:wrap}
+.ringmeta{text-align:left;min-width:200px}
+.fcast{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.fday{flex:1 1 100px;border:1px solid var(--line);border-radius:12px;padding:9px;
+  text-align:center;font-size:13px;background:var(--card)}
+.fday .ic{font-size:26px}
+.searchres{border:1px solid var(--line2);border-radius:10px;margin-top:6px;overflow:hidden}
+.searchres div{padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
+.searchres div:last-child{border-bottom:0}
+.searchres div:hover{background:color-mix(in srgb, var(--blu) 14%, transparent)}
+details.raw{margin-top:10px;font-size:12px}
+details.raw summary{cursor:pointer;color:var(--mut);padding:6px 0}
+details.raw pre{white-space:pre-wrap;font-size:11px;opacity:.8;max-height:300px;overflow:auto}
+footer{padding:16px 20px;font-size:12px;color:var(--mut);border-top:1px solid var(--line)}
+a{color:var(--link)}
+svg.spark{width:100%;height:56px;display:block}
+svg.ring{width:132px;height:132px}
+@media print{
+  header nav, nav, #map, button, .searchres, details.raw, footer{display:none !important}
+  body{background:#fff;color:#000}
+  .card{border:1px solid #999;background:#fff;color:#000;break-inside:avoid;box-shadow:none}
+  main{max-width:100%;padding:0}
+  a{color:#000;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>🏡 heimgrund</h1>
+<p>Grundstück-Check + Gartenplaner · lokal · echte Daten · <span id="ver">…</span></p>
+</header>
+<nav>
+<button id="tabA" class="active" onclick="show('A')">Grundstück</button>
+<button id="tabF" onclick="show('F')">🏗️ Bau-Check</button>
+<button id="tabB" onclick="show('B')">Garten</button>
+<button id="tabD" onclick="show('D')">🚜 Acker-Test</button>
+<button id="tabG" onclick="show('G')">🌲 Wald</button>
+<button id="tabC" onclick="show('C')">Beete</button>
+<button id="tabE" onclick="show('E')">❓ Begriffe</button>
+</nav>
+<main>
+
+<section id="secA">
+<div class="card">
+<h3>📍 Standort suchen oder wählen</h3>
+<label>Adresse / Ort (z. B. „Freiburg Münsterplatz“ oder PLZ)</label>
+<div class="row" style="grid-template-columns:1fr auto">
+<div><input id="q" placeholder="Adresse eingeben …" onkeydown="if(event.key==='Enter')search()"></div>
+<div><button class="primary" style="margin-top:0" onclick="search()">Suchen</button></div>
+</div>
+<div id="searchres" class="searchres" style="display:none"></div>
+<label>Oder direkt Koordinaten (Klick auf die Karte übernimmt)</label>
+<div class="row">
+<div><input id="lat" value="48.7758" inputmode="decimal" aria-label="Breite"></div>
+<div><input id="lon" value="9.1829" inputmode="decimal" aria-label="Länge"></div>
+</div>
+<div>
+<button class="primary" id="btnCheck" onclick="check()">Prüfen</button>
+<button class="secondary" onclick="save()">Als Standort speichern</button>
+</div>
+<p class="small" id="punktLabel">Punkt: noch nicht bestimmt.</p>
+</div>
+<div class="card"><h3>🗺️ Karte <span class="small">(Klick setzt den Punkt · rechts oben: Luftbild &amp; Fachlayer)</span></h3><div id="map"></div>
+<p id="mapfallback" class="small" style="display:none">Karte offline – <span id="osmlink"></span></p></div>
+<div id="result"></div>
+<div class="card"><h3>💾 Gespeicherte Standorte</h3><ul id="sites" class="clean"><li class="small">Noch keine.</li></ul><button class="secondary" onclick="loadSites()">Neu laden</button></div>
+</section>
+
+<section id="secB" style="display:none">
+<div class="card"><h3>🌱 Was passt zu Boden, Wetter &amp; Saison?</h3>
+<div id="gartenOut"><p class="small">Erst unter „Grundstück“ prüfen – die Empfehlung erscheint dann automatisch hier.</p></div>
+</div>
+</section>
+
+<section id="secD" style="display:none">
+<div class="card"><h3>🚜 Landwirtschafts-Eignungstest</h3>
+<p class="small">Boden 35 % · Klima 20 % · Hang 20 % · Umfeld 15 % · Schutz 10 % — aus echten Daten (SoilGrids, ERA5-Klima 2020–24, Höhenmodell, OSM). Übernimmt die Koordinaten aus „Grundstück“.</p>
+<button class="primary" onclick="checkAgri()">Acker-Test starten</button>
+</div>
+<div id="agriOut"></div>
+</section>
+
+<section id="secF" style="display:none">
+<div class="card"><h3>🏗️ Grundstück-Erwerb-Einschätzung</h3>
+<p class="small">K.O.-Check (ÜSG/NSG/FFH) · Denkmalschutz (LAD) · Lärm-Abstände · Starkregen · Hang · Lage (ÖPNV/Einkauf/Schule/Arzt). Übernimmt die Koordinaten aus „Grundstück“.</p>
+<button class="primary" onclick="checkBau()">Bau-Check starten</button>
+</div>
+<div id="bauOut"></div>
+<div class="card"><h3>📋 Kauf-Checkliste (wird lokal gespeichert)</h3><ul id="baucheck" class="clean"></ul></div>
+</section>
+
+<section id="secG" style="display:none">
+<div class="card"><h3>🌲 Wald-Potenzial</h3>
+<p class="small">Waldanteil + Laub/Nadel (OSM), Klimafitness (ERA5), Sturmsicherheit (Hang/Exposition), Boden-Hinweis. FVA-Karten als Overlay-Link.</p>
+<button class="primary" onclick="checkWald()">Wald-Check starten</button>
+</div>
+<div id="waldOut"></div>
+</section>
+
+<section id="secE" style="display:none">
+<div class="card"><h3>❓ Fachbegriffe einfach erklärt</h3>
+<p class="small">Alle Begriffe, die in den Ergebnissen vorkommen — in normalem Deutsch, mit Tipp was zu tun ist.</p>
+<input id="glosQ" placeholder="Suchen, z. B. Schluff …" oninput="renderGlos(this.value)">
+</div>
+<div id="glosOut"></div>
+</section>
+
+<section id="secC" style="display:none">
+<div class="card"><h3>➕ Beet anlegen</h3>
+<label>Name</label><input id="beetName" placeholder="z. B. Hochbeet Nord">
+<div class="row">
+<div><label>Kultur</label><input id="beetKultur" placeholder="z. B. Kartoffeln"></div>
+<div><label>Standort-ID (optional)</label><input id="beetSite" placeholder="z. B. 1" inputmode="numeric"></div>
+</div>
+<label>Notiz</label><textarea id="beetNotiz" rows="2" placeholder="z. B. Kompost eingearbeitet"></textarea>
+<button class="primary" onclick="addBeet()">Speichern</button>
+</div>
+<div class="card"><h3>🥬 Meine Beete</h3><ul id="beete" class="clean"><li class="small">Noch keine.</li></ul><button class="secondary" onclick="loadBeete()">Neu laden</button></div>
+<div class="card"><h3>📤 Export</h3><p class="small"><a href="/api/export" target="_blank">Alle Daten als JSON</a> · <a href="/docs" target="_blank">API-Doku</a></p></div>
+</section>
+</main>
+<footer>Boden: SoilGrids/ISRIC (CC-BY 4.0) · Wetter: Open-Meteo (CC-BY 4.0) · Pegel: WSV PEGELONLINE · Karte: © OpenStreetMap (ODbL) · Fach-Geodaten BW: Geoportal BW/LUBW (DL-BY-2.0)</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+let map=null, marker=null, resMarkers=[], sightMarkers=[], ladeMarkers=[], sightLayer=null, ladeLayer=null, LAST_PEGEL=[];
+function renderPegelSel(i){
+  const el = document.getElementById("pegelCard");
+  if(el && LAST_PEGEL[+i]) el.innerHTML = pegelCard(LAST_PEGEL[+i]);
+}
+function pegelCard(s0){
+  const tr = s0.trend_cm_24h==null ? "" : (s0.trend_cm_24h > 1 ? `<span class="badge warn">↗ +${s0.trend_cm_24h} cm/24h</span>` : s0.trend_cm_24h < -1 ? `<span class="badge ok">↘ ${s0.trend_cm_24h} cm/24h</span>` : `<span class="badge info">→ stabil</span>`);
+  return `<p style="margin:4px 0"><b>${esc(s0.gewaesser)} · ${esc(s0.name)}</b> <span class="small">(${s0.dist_km} km entfernt)</span> ${tr}</p>
+    ${s0.aktuell_cm!=null?`<div class="bignum">${s0.aktuell_cm} <span class="small">cm · ${esc((s0.zeit||"").slice(0,16).replace("T"," "))}</span></div>${sparkSVG(s0.verlauf)}`:`<p class="small">Keine Messwerte.</p>`}`;
+}
+async function j(url, opt){
+  const r = await fetch(url, opt);
+  if(!r.ok){ const t = await r.text(); throw new Error("HTTP "+r.status+": "+t.slice(0,200)); }
+  return r.json();
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function show(x){
+  for(const k of ["A","B","C","D","E","F","G"]){
+    document.getElementById("sec"+k).style.display = (k===x?"block":"none");
+    document.getElementById("tab"+k).classList.toggle("active", k===x);
+  }
+  if(x==="C") loadBeete();
+  if(x==="D" && !document.getElementById("agriOut").innerHTML) checkAgri();
+  if(x==="E" && !document.getElementById("glosOut").innerHTML) renderGlos("");
+  if(x==="F" && !document.getElementById("bauOut").innerHTML) checkBau();
+  if(x==="G" && !document.getElementById("waldOut").innerHTML) checkWald();
+  if(x==="A" && map) setTimeout(()=>map.invalidateSize(), 50);
+}
+function osmUrl(lat, lon){ return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}`; }
+
+/* ---------- Karte ---------- */
+function initMap(lat, lon){
+  document.getElementById("osmlink").innerHTML = `<a href="${osmUrl(lat,lon)}" target="_blank" rel="noopener">Auf OpenStreetMap zeigen ↗</a>`;
+  if(typeof L === "undefined"){ document.getElementById("map").style.display="none"; document.getElementById("mapfallback").style.display="block"; return; }
+  map = L.map("map").setView([lat, lon], 12);
+  const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+  const luft = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DOP_20_C", {
+    layers:"IMAGES_DOP_20_RGB", version:"1.3.0", format:"image/png", transparent:false,
+    attribution:"DOP 20cm © LGL-BW (DL-BY-2.0)"});
+  const wmsOpt = {version:"1.3.0", format:"image/png", transparent:true, opacity:.55};
+  const bestock = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Fernerkundung_Waldbestockung",
+    {...wmsOpt, layers:"fern_bestockungslayer", attribution:"Waldbestockung © FVA-BW"});
+  const sturm = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Sturm",
+    {...wmsOpt, layers:"sturmschadensrisiko_real_fichte", attribution:"Sturmrisiko © FVA-BW"});
+  const kaefer = L.tileLayer.wms("https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_FVA_Klima_Buchdruckergefaehrdung",
+    {...wmsOpt, layers:"buchdruckerrisiko_rcp85_2021_2050", attribution:"Buchdrucker © FVA-BW"});
+  sightLayer = L.layerGroup().addTo(map);
+  ladeLayer = L.layerGroup().addTo(map);
+  L.control.layers({"Karte (OSM)": osm, "Luftbild (DOP 20cm)": luft},
+    {"🌲 Waldbestockung (FVA)": bestock, "🌪️ Sturmrisiko Fichte": sturm, "🪲 Buchdrucker 2021–50": kaefer,
+     "⭐ Sehenswürdigkeiten": sightLayer, "🔌 Ladesäulen": ladeLayer},
+    {collapsed: false}).addTo(map);
+  marker = L.marker([lat, lon], {draggable:true}).addTo(map);
+  marker.on("dragend", ()=>{ const p=marker.getLatLng(); setCoords(p.lat, p.lng); });
+  map.on("click", e=>{ setCoords(e.latlng.lat, e.latlng.lng); });
+}
+function setCoords(lat, lon){
+  lat = Math.round(lat*10000)/10000; lon = Math.round(lon*10000)/10000;
+  document.getElementById("lat").value = lat; document.getElementById("lon").value = lon;
+  if(marker) marker.setLatLng([lat, lon]);
+  if(map) map.panTo([lat, lon]);
+  document.getElementById("osmlink").innerHTML = `<a href="${osmUrl(lat,lon)}" target="_blank" rel="noopener">Auf OpenStreetMap zeigen ↗</a>`;
+  updatePunktLabel(lat, lon);
+}
+async function updatePunktLabel(lat, lon){
+  const el = document.getElementById("punktLabel");
+  el.textContent = `Punkt: ${lat}, ${lon} (Adresse wird geladen …)`;
+  try{
+    const r = await j(`/api/reverse_geocode?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    if(r.status === "live" && (r.plz || r.ort))
+      el.textContent = `Punkt: ${r.plz} ${r.ort}${r.strasse?", "+r.strasse:""} (${lat}, ${lon})`;
+    else
+      el.textContent = `Punkt: ${lat}, ${lon}`;
+  }catch(e){ el.textContent = `Punkt: ${lat}, ${lon}`; }
+}
+function drawReserves(list){
+  if(!map) return;
+  resMarkers.forEach(m=>map.removeLayer(m)); resMarkers = [];
+  (list||[]).slice(0,8).forEach(r=>{
+    if(r.lat==null) return;
+    const m = L.circleMarker([r.lat, r.lon], {radius:7, color:"#2f7d4f", fillOpacity:.6}).addTo(map)
+      .bindPopup(`<b>${esc(r.name)}</b><br>${r.dist_km} km`);
+    resMarkers.push(m);
+  });
+}
+function drawSights(list){
+  if(!map || !sightLayer) return;
+  sightLayer.clearLayers(); sightMarkers = [];
+  (list||[]).slice(0,20).forEach(s=>{
+    if(s.lat==null) return;
+    const m = L.marker([s.lat, s.lon]).addTo(sightLayer)
+      .bindPopup(`<b>${esc(s.icon||"⭐")} ${esc(s.name)}</b><br>${esc(s.art||"")} · ${s.dist_km} km`);
+    sightMarkers.push(m);
+  });
+}
+function drawLaden(list){
+  if(!map || !ladeLayer) return;
+  ladeLayer.clearLayers(); ladeMarkers = [];
+  (list||[]).slice(0,10).forEach(s=>{
+    if(s.lat==null) return;
+    const m = L.circleMarker([s.lat, s.lon], {radius:6, color: s.schnell?"#e6a817":"#3a7ab5", fillOpacity:.7}).addTo(ladeLayer)
+      .bindPopup(`<b>🔌 ${s.kw} kW${s.schnell?" (schnell)":""}</b><br>${esc(s.betreiber)}<br>${esc(s.adresse)} · ${s.dist_km} km`);
+    ladeMarkers.push(m);
+  });
+}
+
+/* ---------- Suche ---------- */
+async function search(){
+  const q = document.getElementById("q").value.trim();
+  const box = document.getElementById("searchres");
+  const btn = document.querySelector("button[onclick='search()']");
+  if(q.length < 2){ box.style.display = "block"; box.innerHTML = "<div>Mindestens 2 Zeichen (PLZ oder Ort) eingeben.</div>"; return; }
+  box.style.display = "block"; box.innerHTML = "<div>Suche läuft …</div>";
+  if(btn){ btn.disabled = true; btn.textContent = "Sucht …"; }
+  try{
+    const d = await j("/api/geocode?q="+encodeURIComponent(q));
+    if(d.status !== "live"){ box.innerHTML = `<div>Suche offline${d.error?" ("+esc(String(d.error).slice(0,80))+")":""} – Koordinaten direkt eingeben oder Karte klicken.</div>`; return; }
+    if(!d.treffer.length){ box.innerHTML = "<div>Keine Treffer – PLZ oder größeren Ort versuchen.</div>"; return; }
+    box.innerHTML = d.treffer.map((t,i)=>`<div data-i="${i}">${esc(t.name)}</div>`).join("");
+    box.querySelectorAll("div").forEach(el=>el.onclick = ()=>{
+      const t = d.treffer[+el.dataset.i];
+      box.style.display = "none"; setCoords(t.lat, t.lon); check();
+    });
+  }catch(err){ box.innerHTML = `<div>Suche fehlgeschlagen: ${esc(err.message)} – Backend unter <a href="/api/health" target="_blank">/api/health</a> prüfen.</div>`; }
+  finally{ if(btn){ btn.disabled = false; btn.textContent = "Suchen"; } }
+}
+
+/* ---------- Report ---------- */
+async function check(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("result");
+  box.innerHTML = '<div class="card loading">Frage Boden, Wetter, Pegel &amp; Umfeld ab (dauert ein paar Sekunden) …</div>';
+  try{
+    const d = await j(`/api/standort/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    box.innerHTML = renderReport(d);
+    drawReserves((d.umfeld||{}).reservate);
+    drawSights((d.umfeld||{}).sehenswuerdigkeiten);
+    drawLaden((d.laden||{}).saeulen);
+    const html = renderGarten(await j(`/api/garten/empfehlung?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`));
+    document.getElementById("gartenOut").innerHTML = html;
+    const inline = document.getElementById("gartenInline");
+    if(inline) inline.innerHTML = html;
+  }catch(err){ box.innerHTML = `<div class="err">Abfrage fehlgeschlagen: ${esc(err.message)}<br><span class="small">Backend-Status: <a href="/api/health" target="_blank">/api/health</a></span></div>`; }
+}
+function liveBadge(mod){
+  if(!mod) return "";
+  if(mod.status === "live") return (mod.cached||mod.mess_cached) ? '<span class="badge info">Live (Cache)</span>' : '<span class="badge ok">Live</span>';
+  if(mod.status === "offline") return `<span class="badge warn">Offline${mod.error?" – "+esc(mod.error.slice(0,60)):""}</span>`;
+  return '<span class="badge warn">Eingeschränkt</span>';
+}
+function texBar(label, pct, color){
+  pct = Math.max(0, Math.min(100, pct));
+  return `<div><span class="small">${esc(label)}: <b>${pct.toFixed(0)} %</b></span><div class="bar"><i style="width:${pct}%;background:${color}"></i></div></div>`;
+}
+function sparkSVG(vals){
+  if(!vals || vals.length < 2) return "";
+  const w=300, h=56, min=Math.min(...vals), max=Math.max(...vals), span=(max-min)||1;
+  const pts = vals.map((v,i)=>`${(i/(vals.length-1)*w).toFixed(1)},${(h-4-((v-min)/span)*(h-10)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#3a7ab5" stroke-width="2"/><text x="4" y="12" font-size="10" fill="currentColor" opacity=".6">${max}</text><text x="4" y="${h-4}" font-size="10" fill="currentColor" opacity=".6">${min}</text></svg><p class="small">Wasserstand letzte ~12 h in cm</p>`;
+}
+function renderReport(d){
+  const bw = d.in_bw ? '<span class="badge ok">📍 Baden-Württemberg</span>'
+    : '<span class="badge bad">Außerhalb BW – Fachdaten nur für BW</span>';
+  const b = d.boden||{}, wx = d.wetter||{}, p = d.pegel||{}, u = d.umfeld||{};
+  let bodenHtml;
+  if(b.status === "live" && !b.versiegelt){
+    const sc = b.garten_score||{wert:"?",label:""};
+    const col = sc.wert>=65 ? "#2f7d4f" : sc.wert>=50 ? "#a97b1f" : "#b53a3a";
+    bodenHtml = `
+      <div class="bignum" style="color:${col}">${sc.wert}<span class="small">/100 · ${esc(sc.label)} für Garten</span></div>
+      <p style="margin:4px 0"><b>Bodenart: ${esc(b.bodenart||"–")}</b> <span class="small">(${esc(b.tiefe||"")})</span></p>
+      ${texBar("Sand", b.sand_pct||0, "#d9b45b")}${texBar("Schluff", b.schluff_pct||0, "#9db87a")}${texBar("Ton", b.ton_pct||0, "#7a5b3a")}
+      <p class="small">pH-Wert: <b>${b.ph==null?"–":b.ph}</b>${b.ph_wertung?" – "+esc(b.ph_wertung):""}${b.humus_g_kg!=null?` · Humus: <b>${b.humus_g_kg} g/kg</b>`:""}</p>
+      ${b.lgrb&&b.lgrb.gesamtbewertung?`<div class="tip">🏛️ <b>Behörde (LGRB BK50):</b> ${esc(b.lgrb.gesamtbewertung.einheit)} – ${esc(b.lgrb.gesamtbewertung.legende)}${b.lgrb.nfk&&b.lgrb.nfk.extra&&b.lgrb.nfk.extra["nfk-Wert"]?` · <b>nfk-Wert ${esc(b.lgrb.nfk.extra["nfk-Wert"])}</b> (nutzbare Feldkapazität)`:""}</div>`
+        :b.lgrb?`<p class="small">LGRB: keine Kartierung an diesem Punkt (z. B. Siedlung).</p>`:""}
+      <details class="raw"><summary>Was bedeuten Sand, Schluff, Ton?</summary><p class="small">
+      Das sind die <b>Korngrößen</b> des Bodens: <b>Sand</b> (2–0,063 mm, grob – lässt Wasser durch, hält kaum Nährstoffe),
+      <b>Schluff</b> (0,063–0,002 mm, mittel – <b>speichert Wasser und Nährstoffe sehr gut</b>, verschlämmt aber bei Regen und bildet Krusten),
+      <b>Ton</b> (&lt;0,002 mm, fein – hält am meisten Wasser/Nährstoffe, ist aber schwer zu bearbeiten und neigt zu Staunässe).<br>
+      Die Mischung bestimmt die <b>Bodenart</b>: viel Sand = leicht/durchlässig (Kartoffeln lieben das), viel Schluff = fruchtbar aber verschlämmungsanfällig (mulchen!), viel Ton = schwer (nur trocken bearbeiten).
+      Ideal für Gemüse: lehmige Mitte mit Humus.</p></details>`;
+  } else if(b.versiegelt){
+    bodenHtml = `<div class="warnbox">🏗️ ${esc(b.hinweis||"Versiegelte Fläche.")}</div>`;
+  } else {
+    bodenHtml = `<div class="warnbox">Bodendaten offline${b.error?" ("+esc(b.error.slice(0,80))+")":""}. Später erneut versuchen.</div>`;
+  }
+  let wetterHtml;
+  if(wx.status === "live"){
+    const a = wx.aktuell;
+    wetterHtml = `<div style="font-size:15px"><span style="font-size:28px">${a.icon}</span> <b>${a.temp} °C</b> · ${esc(a.text)} <span class="small">· 💧 ${a.feuchte} % · 🌧️ ${a.regen_mm} mm${wx.hoehe_m!=null?` · ⛰️ ${wx.hoehe_m} m`:""}</span></div>
+      <div class="fcast">${(wx.tage||[]).map(t=>`<div class="fday"><div><b>${esc(t.datum.slice(5))}</b></div><div class="ic">${t.icon}</div><div>${esc(t.text)}</div><div>${t.tmin}–${t.tmax} °C</div><div class="small">🌧️ ${t.regen} mm</div></div>`).join("")}</div>`;
+  } else {
+    wetterHtml = `<div class="warnbox">Wetter offline${wx.error?" ("+esc(wx.error.slice(0,80))+")":""}.</div>`;
+  }
+  let pegelHtml;
+  if(p.status === "live" && (p.stationen||[]).length){
+    LAST_PEGEL = p.stationen;
+    const opts = p.stationen.map((s,i)=>`<option value="${i}"${i===0?" selected":""}>${esc(s.gewaesser)} · ${esc(s.name)} (${s.dist_km} km)</option>`).join("");
+    pegelHtml = `${p.stationen.length>1?`<label>Pegel wählen</label><select id="pegelsel" onchange="renderPegelSel(this.value)" style="width:100%;padding:9px;border-radius:8px;border:1px solid #3a4a5a;background:transparent;color:inherit;font:inherit">${opts}</select>`:""}
+      <div id="pegelCard">${pegelCard(p.stationen[0])}</div>`;
+  } else {
+    pegelHtml = `<div class="warnbox">Pegeldaten offline${p.error?" ("+esc(p.error.slice(0,80))+")":""}.</div>`;
+  }
+  const res = (u.reservate||[]).map(r=>`<li>🦋 <b>${esc(r.name)}</b> <span class="badge gray">${r.dist_km} km</span> <span class="small"><a href="${osmUrl(r.lat,r.lon)}" target="_blank" rel="noopener">Karte ↗</a></span></li>`).join("");
+  const nutz = (u.landnutzung||[]).map(n=>`<span class="chip gray">${esc(n.typ)} ×${n.treffer}</span>`).join("");
+  const sights = (u.sehenswuerdigkeiten||[]).slice(0,8).map(s=>`<li>${esc(s.icon||"⭐")} <b>${esc(s.name)}</b> <span class="small">${esc(s.art||"")} · ${s.dist_km} km</span></li>`).join("");
+  const lad = d.laden||{};
+  const ladList = (lad.saeulen||[]).slice(0,5).map(s=>`<li>🔌 <b>${s.kw} kW${s.schnell?" ⚡":""}</b> <span class="small">${esc(s.betreiber)} · ${esc(s.adresse)} · ${s.dist_km} km</span></li>`).join("");
+  const bh = d.behoerden||{};
+  const bhRows = (bh.layer||[]).map(l=>{
+    const ic = l.status!=="live" ? "❔" : l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
+    const det = l.status!=="live" ? `<span class="small">offline</span>`
+      : l.treffer ? `<br><span class="small">Treffer: <b>${esc((l.namen||[]).join("; ")||l.anzahl+" Fläche(n)")}</b></span>`
+      : `<span class="small">frei</span>`;
+    return `<li>${ic} <b>${esc(l.label)}</b> ${det}</li>`;
+  }).join("");
+  return `
+  <div class="card"><h3>🧾 ${esc(d.lat)}, ${esc(d.lon)} <span class="small"><a href="${osmUrl(d.lat,d.lon)}" target="_blank" rel="noopener">OSM ↗</a> · ${d.dauer_s}s</span></h3><div>${bw}</div></div>
+  <div class="grid">
+    <div class="card"><h3>🌍 Boden ${liveBadge(b)}</h3>${bodenHtml}</div>
+    <div class="card"><h3>🌤️ Wetter &amp; Höhe ${liveBadge(wx)}</h3>${wetterHtml}</div>
+    <div class="card"><h3>💧 Pegel in der Nähe ${liveBadge(p)}</h3>${pegelHtml}</div>
+    <div class="card"><h3>🦋 Natur &amp; Nutzung ${liveBadge(u)}</h3>
+      ${res?`<ul class="clean">${res}</ul>`:`<p class="small">Keine Schutzgebiete im Umkreis 15 km gefunden (OSM).</p>`}
+      <p style="margin:8px 0 4px"><b>Nutzung im Umfeld (3 km):</b></p><div>${nutz||'<span class="small">–</span>'}</div>
+      ${sights?`<p style="margin:8px 0 4px"><b>⭐ Sehenswert im Umkreis (10 km, auch auf der Karte):</b></p><ul class="clean">${sights}</ul>`:`<p class="small">Keine Sehenswürdigkeiten im Umkreis gefunden.</p>`}
+      ${ladList?`<p style="margin:8px 0 4px"><b>🔌 Nächste Ladesäulen ${liveBadge(lad)}:</b></p><ul class="clean">${ladList}</ul>`:""}
+    </div>
+  <div class="card"><h3>🖨️ Exposé <span class="small">(druckt nur diesen Bericht)</span></h3><button class="secondary" onclick="window.print()">Drucken / PDF</button></div>
+  </div>
+  <div class="card"><h3>🏛️ Behörden-Check (LUBW-Fachdaten) ${liveBadge(bh)}</h3>
+    ${bhRows?`<ul class="clean">${bhRows}</ul>`:`<p class="small">Behördendaten offline – später erneut versuchen.</p>`}
+    <p class="small">Punktabfrage (±50 m) in NSG, FFH, LSG, WSG, FFH-Mähwiesen, Überschwemmungsgebieten. 🛑 = Bauen/Nutzung stark eingeschränkt · ⚠️ = Auflagen prüfen · ✅ = frei. Quelle: LUBW RIPS (DL-BY-2.0).</p>
+  </div>
+  <div class="card"><h3>🌱 Garten-Empfehlung</h3><div id="gartenInline"><p class="small">Wird geladen …</p></div></div>
+  <details class="raw card"><summary>Rohdaten (für Fehlersuche)</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
+}
+function renderGarten(e){
+  const chips = (e.empfohlene_kulturen||[]).map(k=>`<span class="chip">🌱 ${esc(k)}</span>`).join("");
+  return `<div><span class="badge ok">📅 ${esc(e.saison)}</span>${e.regen_naechste_2_tage_mm!=null?`<span class="badge info">🌧️ ${e.regen_naechste_2_tage_mm.toFixed(0)} mm / 2 Tage</span>`:""}</div>
+    <p style="margin:10px 0 4px"><b>Jetzt passend:</b> ${e.saison_notiz?`<span class="small">(${esc(e.saison_notiz)})</span>`:""}</p><div>${chips}</div>
+    <div class="tip">💧 ${esc(e.giess_empfehlung||"–")}</div>
+    ${e.boden_einschaetzung?`<p class="small">🌍 ${esc(e.boden_einschaetzung)}</p>`:""}
+    ${e.wetter?`<p class="small">Aktuell: ${e.wetter.icon} ${e.wetter.temp} °C, 💧 ${e.wetter.feuchte} %</p>`:""}`;
+}
+const GLOSSAR = [
+["🌍 Boden", [
+["Sand (Bodenart)", "Die gröbste Kornfraktion (2–0,063 mm). Lässt Wasser schnell durch, speichert aber kaum Wasser und Nährstoffe. Tipp: viel Kompost/Mulch, öfter wässern. Kartoffeln lieben Sand."],
+["Schluff", "Die mittlere Kornfraktion (0,063–0,002 mm) – fühlt sich mehlig an. Speichert Wasser und Nährstoffe sehr gut, deshalb sehr fruchtbar. Schwäche: verschlämmt bei Regen, bildet harte Krusten und erodiert am Hang. Tipp: nie nass bearbeiten, immer Bodenbedeckung/Mulch, Humus aufbauen."],
+["Ton", "Die feinste Kornfraktion (kleiner als 0,002 mm). Hält am meisten Wasser und Nährstoffe, ist aber schwer zu bearbeiten, neigt zu Staunässe und reißt bei Trockenheit. Tipp: nur im abgetrockneten Zustand bearbeiten, Sand + Kompost einarbeiten."],
+["Bodenart", "Die Mischung aus Sand, Schluff und Ton – z. B. lehmiger Sand oder schluffiger Lehm. Sie bestimmt, wie der Boden Wasser hält, ob er sich leicht bearbeiten lässt und welche Kulturen passen. Faustregel: Extreme meiden, die lehmige Mitte ist am vielseitigsten."],
+["pH-Wert", "Sagt, ob der Boden sauer oder alkalisch ist (Skala 0–14, 7 = neutral). Die meisten Gemüse mögen 6,0–7,2. Darunter: Kalk streuen. Darüber: eher kalkliebende Kulturen wie Kohl oder Lavendel."],
+["Humus (g/kg)", "Der Gehalt an organischer Substanz – Futter für Bodenleben, Wasserspeicher und Nährstoffpuffer in einem. Über 20 g/kg ist gut. Aufbauen mit Kompost, Mulch und Gründüngung."],
+["Nutzbare Feldkapazität (nfk)", "Wie viel Wasser der Boden pflanzenverfügbar speichern kann (LGRB-Stufen). Hoch = übersteht Trockenphasen ohne Gießen; niedrig = bei Hitze wässern oder humusaufbauende Kulturen wählen."],
+["Garten-Score / Acker-Score", "Unsere 0–100-Zusammenfassung: Boden, Klima, Hang, Umfeld und Schutzgebiete werden gewichtet verrechnet. Über 80 hervorragend, 65+ gut, 50+ mittel, darunter schwierig. Details stehen bei den Faktoren-Balken."],
+["Ackerzahl", "Alte amtliche Kennzahl der Bodenschätzung (Skala grob 10–100): Je höher, desto ertragreicher der Acker. Unter 30 gilt als schwach, über 60 als sehr gut. Wichtig bei Kauf/Pacht."],
+["Erosion", "Abtrag von Boden durch Wasser (Starkregen am Hang) oder Wind (offene Flächen). Schluffige Böden und Hänge über ~7 % sind gefährdet. Gegenmittel: Bodenbedeckung, Mulch, Querbewirtschaftung, Hecken."],
+]],
+["💧 Wasser", [
+["Überschwemmungsgebiet (ÜSG)", "Rechtlich festgelegte Fläche, die bei Hochwasser überflutet werden kann. Bauen ist dort stark eingeschränkt oder verboten (§ 78 WHG). 🛑 im Behörden-Check heißt: unbedingt beim Bauamt klären."],
+["HQ100 / HQextrem", "Hochwasser, das im Schnitt einmal in 100 Jahren (HQ100) bzw. seltener, aber heftiger (HQextrem) auftritt. HQ100 ist die Bemessungsgröße für Schutz und Bauverbote – kein Versprechen, dass es nur alle 100 Jahre kommt."],
+["Wasserschutzgebiet (WSG)", "Schutzfläche um Trinkwasserbrunnen. Zone I (eng, meist eingezäunt): fast alles verboten. Zone II: Bauen/Düngen stark eingeschränkt. Zone III: Auflagen möglich. Auskunft gibt die Untere Wasserbehörde."],
+["Pegel / Wasserstand", "Gemessene Wasserhöhe eines Flusses in cm an einer Messstation – kein absolutes Maß, sondern relativ zum Pegelnullpunkt. Wichtig sind Veränderung (Trend ↗/↘) und Vergleich mit langjährigen Mittelwerten."],
+["Versickerung", "Ob Regenwasser im Boden versickern kann. Sand lässt durch, Ton und versiegelte Flächen nicht. Bei schlechter Versickerung: Zisterne, Rigole oder Mulden planen – und Keller gegen Rückstau sichern."],
+]],
+["🦋 Natur & Schutzgebiete", [
+["Naturschutzgebiet (NSG)", "Strengste Schutzkategorie: Betreten oft nur auf Wegen, Bauen/Mähen/Düngen meist verboten. Direkter Treffer am Punkt = K.O. für Bauvorhaben."],
+["FFH-Gebiet (Natura 2000)", "EU-weites Schutznetz für seltene Arten und Lebensräume. Eingriffe brauchen eine Verträglichkeitsprüfung – Bauen wird schwierig bis unmöglich."],
+["Landschaftsschutzgebiet (LSG)", "Schutz von Landschaftsbild und Erholung. Bauen ist eingeschränkt und genehmigungspflichtig, aber oft möglich. Beim Landratsamt anfragen."],
+["FFH-Mähwiese", "Artenreiche, extensiv bewirtschaftete Wiese (ein- bis zweimal mähen, wenig Dünger). Umbruch oder Intensivierung ist verboten – für Grünlandnutzung aber ein Gütesiegel."],
+["Biosphärengebiet", "Modellregion für nachhaltiges Leben (z. B. Schwäbische Alb). Zonen: Kernzone (Betreten verboten) → Pflegezone → Entwicklungszone (Wohnen/Wirtschaften erwünscht)."],
+["Biotop", "Besonders wertvoller Lebensraum (z. B. Feuchtwiese, Hecke). Oft gesetzlich geschützt – nicht bebauen, nicht entwässern."],
+]],
+["🚜 Landwirtschaft", [
+["LPIS / Feldblock", "Das EU-System (InVeKoS), das jede geförderte Agrarfläche als Referenzparzelle erfasst. Der Feldblock ist die Geometrie deines Schlags – Basis für Agrarförderung und Pachtverträge."],
+["InVeKoS", "Kürzel für das EU-Verwaltungssystem der Agrarförderung: Wer Direktzahlungen bekommt, meldet Flächen und Kulturen – diese Daten stecken (anonymisiert) hinter LPIS-Karten."],
+["Fruchtfolge", "Jährlicher Wechsel der Kulturen auf einem Beet/Schlag, damit der Boden nicht einseitig auslaugt und Krankheiten sich nicht festsetzen. Einfach: Starkzehrer → Mittelzehrer → Schwachzehrer → Pause/Gründüngung."],
+["Gründüngung", "Pflanzen (z. B. Phacelia, Klee, Senf), die man nicht erntet, sondern als Bodenfutter sät: lockert, düngt und schützt vor Erosion. Ideal für Herbst/Winter."],
+["Streuobst", "Hochstamm-Obstbäume auf Wiesen – typisch für BW, ökologisch wertvoll, pflegeleicht nach der Anwachsphase. Erste Ernte nach 3–5 Jahren."],
+]],
+["🌤️ Klima & Wetter", [
+["Hangneigung (%)", "100 % = 45 Grad. Unter 2 % eben, 2–7 % gut bewirtschaftbar, über 12 % steil: Erosion, teure Bewirtschaftung, schwieriges Bauen (Stützmauern, Zufahrt)."],
+["Exposition", "Die Himmelsrichtung des Hangs. Süd/Südwest = wärmster, sonnigster (Wein, Tomaten), Nord = kühl und feucht (eher Grünland/Wald)."],
+["Frosttage / Hitzetage", "Tage unter 0 °C bzw. ab 30 °C im langjährigen Mittel. Viele Frosttage = Spätfrostgefahr für Obstblüte; viele Hitzetage = Bewässerung einplanen."],
+["Jahresniederschlag", "Regenmenge pro Jahr in mm. 650–900 mm ist ideal für Ackerbau ohne Bewässerung; darunter wird's trocken, darüber staunass."],
+["ERA5", "EU-Klimadatensatz (Copernicus), aus dem wir die 5-Jahres-Mittel für deinen Punkt berechnen – echte Mess-Modell-Kombi, keine Schätzung."],
+]],
+["🗺️ Datenquellen", [
+["SoilGrids", "Weltweite Bodenkarte der ISRIC (Uni Wageningen): Ton/Sand/Schluff, pH und Humus pro 250-m-Raster, CC-BY 4.0. In Städten oft leer (versiegelt) – dann 50–200 m daneben prüfen."],
+["Open-Meteo", "Freie Wetter-APIs (CC-BY 4.0): Vorhersage, Höhe und Archivwerte – ohne Schlüssel, direkt vom Server in deinen LXC."],
+["PEGELONLINE", "Amtliche Wasserstände der Bundeswasserstraßen (WSV) – hochwertiger Datensatz (HVD), alle 15 Minuten neu. Küsten- und Binnenpegel."],
+["LUBW / RIPS", "Landesanstalt für Umwelt BW: liefert Überschwemmungsgebiete, Wasserschutz, Naturschutz & Co. als amtliche Geodaten (DL-BY-2.0)."],
+["AWGN", "Das wasserwirtschaftliche Gewässernetz von BW: jedes relevante Fließgewässer plus Einzugsgebiete – kommt als Nächstes in die App."],
+["OpenStreetMap", "Freie Weltkarte von Freiwilligen (ODbL): Schutzgebiete-Näherung, Landnutzung, Adresssuche und Kartendarstellung."],
+]],
+];
+function renderGlos(filter){
+  const f = (filter||"").toLowerCase().trim();
+  const html = GLOSSAR.map(([gruppe, begriffe])=>{
+    const treffer = begriffe.filter(([t, e])=>!f || t.toLowerCase().includes(f) || e.toLowerCase().includes(f));
+    if(!treffer.length) return "";
+    return `<div class="card"><h3>${esc(gruppe)}</h3><ul class="clean">${treffer.map(([t,e])=>`<li><b>${esc(t)}</b><br><span class="small">${esc(e)}</span></li>`).join("")}</ul></div>`;
+  }).join("");
+  document.getElementById("glosOut").innerHTML = html || '<div class="card"><p class="small">Nichts gefunden – anderen Suchbegriff versuchen.</p></div>';
+}
+const BAUCHECK = [
+["Baulastenverzeichnis", "Beim Bauamt: Lasten auf dem Flurstück (Leitungen, Wege-, Abstandsflächen)?"],
+["Bebauungsplan / §34 BauGB", "Was darf gebaut werden (Geschosse, Dach, GRZ)? Liegt ein B-Plan vor oder Innenbereich?"],
+["Erschließung", "Wasser, Abwasser, Strom, Glasfaser, Straße – alles am Grundstück und bezahlt?"],
+["Bodenrichtwert / Kaufpreis", "BORIS-BW beim Gutachterausschuss vergleichen – passt der Preis zur Lage?"],
+["Altlasten-Auskunft", "Beim Landratsamt nach Altlastenkataster fragen (Tankstelle, Gewerbe-Vornutzung)?"],
+["Wasserbehörde", "ÜSG/WSG-Bescheid einholen, wenn der Behörden-Check Treffer zeigt."],
+["Denkmalschutz", "Bei Treffer: LAD/RP kontaktieren – was ist genehmigungspflichtig?"],
+["Baugrundgutachten", "Vor Kauf: Bodengutachten (Tragfähigkeit, Grundwasser) – spart böse Überraschungen."],
+["Versicherung", "Elementarschaden-Versicherung anfragen (Starkregen/Hochwasser beachten)."],
+["Nachbarn & Lärm", "Zu verschiedenen Zeiten vorbeifahren: Bahn, Straße, Gewerbe, Nachtleben?"],
+];
+function loadBaucheck(){
+  let done = {};
+  try{ done = JSON.parse(localStorage.getItem("baucheck")||"{}"); }catch(e){}
+  document.getElementById("baucheck").innerHTML = BAUCHECK.map((c,i)=>
+    `<li><label style="display:flex;gap:8px;align-items:flex-start;margin:0;cursor:pointer">
+    <input type="checkbox" style="width:auto;margin-top:4px" ${done[i]?"checked":""} onchange="saveBaucheck(${i},this.checked)">
+    <span><b>${esc(c[0])}</b><br><span class="small">${esc(c[1])}</span></span></label></li>`).join("");
+}
+function saveBaucheck(i, v){
+  let done = {};
+  try{ done = JSON.parse(localStorage.getItem("baucheck")||"{}"); }catch(e){}
+  done[i] = v; localStorage.setItem("baucheck", JSON.stringify(done));
+}
+async function checkBau(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("bauOut");
+  box.innerHTML = '<div class="card loading">Prüfe Schutzgebiete, Denkmal, Lärm, Starkregen, Lage … (erster Abruf ~15 s, danach Cache)</div>';
+  try{ box.innerHTML = renderBau(await j(`/api/bau/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)); }
+  catch(err){ box.innerHTML = `<div class="err">Bau-Check fehlgeschlagen: ${esc(err.message)}</div>`; }
+  loadBaucheck();
+}
+function ampelBadge(a){
+  return a==="gruen" ? '<span class="badge ok">🟢 unauffällig</span>'
+    : a==="gelb" ? '<span class="badge warn">🟡 Auflagen prüfen</span>'
+    : '<span class="badge bad">🔴 K.O. – Bauamt klären</span>';
+}
+function renderBau(b){
+  const fn = {schutz:"🏛️ Schutzgebiete (30 %)", laerm:"🔊 Lärm-Abstände (20 %)", starkregen:"⛈️ Starkregen (15 %)", hang:"⛰️ Hang/Baugrund (15 %)", lage:"🚏 Lage (20 %)"};
+  const bars = Object.entries(b.faktoren||{}).map(([k,f])=>faktorBar(fn[k]||k, f)).join("");
+  const ko = (b.ko_kriterien||[]).map(k=>`<div class="warnbox">🛑 <b>K.O.:</b> ${esc(k)}</div>`).join("");
+  const auf = (b.auflagen||[]).map(k=>`<div class="tip">⚠️ ${esc(k)}</div>`).join("");
+  const denk = (b.denkmal||[]).filter(o=>o.treffer).map(o=>`<li>🏛️ <b>${esc(o.label)}</b><br><span class="small">${esc(o.beschreibung||"")}</span></li>`).join("");
+  return `
+  ${ko}
+  <div class="card">
+    ${scoreRing(b.score, b.ampel==="gruen"?"Unauffällig":b.ampel==="gelb"?"Auflagen prüfen":"K.O. – klären", `${ampelBadge(b.ampel)} <span class="small">${esc(b.lat)}, ${esc(b.lon)} · ${b.dauer_s}s</span>`)}
+  </div>
+  <div><button class="secondary" onclick="window.print()">🖨️ Exposé drucken</button></div>
+  ${aussageBox(b.aussagekraft, b.gegenwert)}
+  ${auf}
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${denk?`<div class="card"><h3>🏛️ Denkmalschutz (LAD, ±130 m)</h3><ul class="clean">${denk}</ul></div>`:""}
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(b,null,2))}</pre></details>`;
+}
+async function checkWald(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("waldOut");
+  box.innerHTML = '<div class="card loading">Analysiere Waldanteil, Klima, Sturm …</div>';
+  try{ box.innerHTML = renderWald(await j(`/api/wald/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`)); }
+  catch(err){ box.innerHTML = `<div class="err">Wald-Check fehlgeschlagen: ${esc(err.message)}</div>`; }
+}
+function renderWald(w){
+  const fn = {waldanteil:"🌲 Waldanteil (40 %)", klimafitness:"🌤️ Klimafitness (30 %)", sturmsicherheit:"🌪️ Sturmsicherheit (30 %)"};
+  const bars = Object.entries(w.faktoren||{}).map(([k,f])=>faktorBar(fn[k]||k, f)).join("");
+  const hin = (w.hinweise||[]).map(h=>`<div class="tip">💡 ${esc(h)}</div>`).join("");
+  return `
+  <div class="card">
+    ${scoreRing(w.score, w.label, `<span class="small">${esc(w.lat)}, ${esc(w.lon)} · ${w.dauer_s}s</span>`)}
+  </div>
+  ${aussageBox(w.aussagekraft, w.gegenwert)}
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${hin}
+  <p class="small">${esc(w.fva_hinweis||"")}</p>
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(w,null,2))}</pre></details>`;
+}
+async function checkAgri(){
+  const lat = document.getElementById("lat").value.trim(),
+        lon = document.getElementById("lon").value.trim(),
+        box = document.getElementById("agriOut");
+  box.innerHTML = '<div class="card loading">Berechne Boden, Klima (5 Jahre), Hang … (dauert beim ersten Mal ~20 s, danach aus Cache)</div>';
+  try{
+    box.innerHTML = renderAgri(await j(`/api/agri/test?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`));
+  }catch(err){ box.innerHTML = `<div class="err">Acker-Test fehlgeschlagen: ${esc(err.message)}</div>`; }
+}
+function scoreColor(s){
+  if(s==null) return "#888";
+  return s>=80 ? "#2f7d4f" : s>=65 ? "#7ab54a" : s>=50 ? "#a97b1f" : "#b53a3a";
+}
+function scoreRing(score, label, sub){
+  if(score==null) return `<div class="bignum">?<div class="small">${esc(label||"")}</div></div>`;
+  const col = scoreColor(score), r = 54, c = 2*Math.PI*r,
+        off = c*(1-Math.max(0,Math.min(100,score))/100);
+  return `<div class="ringwrap">
+    <svg class="ring" viewBox="0 0 132 132" role="img" aria-label="Score ${score} von 100">
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="currentColor" opacity=".15" stroke-width="12"/>
+      <circle cx="66" cy="66" r="${r}" fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round"
+        stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 66 66)"/>
+      <text x="66" y="62" text-anchor="middle" font-size="30" font-weight="700" fill="currentColor">${score}</text>
+      <text x="66" y="82" text-anchor="middle" font-size="11" fill="currentColor" opacity=".6">/ 100</text>
+    </svg>
+    <div class="ringmeta"><div style="font-size:17px;font-weight:700">${esc(label||"")}</div>
+    <div class="small">${sub||""}</div></div></div>`;
+}
+function vertDot(v){
+  if(v==="hoch") return ' <span class="badge ok" title="Amtliche Messung / Fachdaten">● belastbar</span>';
+  if(v==="mittel") return ' <span class="badge info" title="Modell oder Rasterdaten">● Modell</span>';
+  if(!v) return "";
+  return ' <span class="badge warn" title="Näherung / Community-Daten">● Schätzung</span>';
+}
+function faktorBar(name, f){
+  return `<div><span class="small"><b>${name}</b>: ${f.wert==null?"offline":f.wert+" / 100"}${vertDot(f.vertrauen)}</span>
+  <div class="bar"><i style="width:${f.wert||0}%;background:${scoreColor(f.wert)}"></i></div>
+  <p class="small" style="margin:0">${esc(f.text)}</p>
+  ${f.vertrauen_grund?`<p class="small" style="margin:0 0 6px;opacity:.55">Datenbasis: ${esc(f.vertrauen_grund)}</p>`:`<p style="margin:0 0 6px"></p>`}</div>`;
+}
+function aussageBox(aussage, gegenwert){
+  if(!aussage || aussage.prozent==null) return "";
+  const col = aussage.prozent>=80 ? "#2f7d4f" : aussage.prozent>=55 ? "#a97b1f" : "#b53a3a";
+  return `<div class="card"><h3>🔍 So belastbar ist der Wert: ${aussage.prozent} %</h3>
+  <div class="bar"><i style="width:${aussage.prozent}%;background:${col}"></i></div>
+  <p class="small">${esc(aussage.text)}</p>
+  ${gegenwert?`<div class="tip">⚖️ <b>Gegenwert:</b> ${esc(gegenwert)}</div>`:""}</div>`;
+}
+function renderAgri(a){
+  const col = scoreColor(a.score);
+  const faktorNamen = {boden:"🌍 Boden (35 %)", klima:"🌤️ Klima (20 %)", hang:"⛰️ Hang (20 %)", umfeld:"🚜 Umfeld (15 %)", schutz:"🦋 Schutz (10 %)"};
+  const bars = Object.entries(a.faktoren||{}).map(([k,f])=>faktorBar(faktorNamen[k]||k, f)).join("");
+  const kult = (a.kulturen||[]).map(k=>{
+    const b = k.status==="geeignet" ? "ok" : k.status==="bedingt" ? "warn" : "bad";
+    const ic = k.status==="geeignet" ? "✅" : k.status==="bedingt" ? "⚠️" : "🛑";
+    return `<li>${ic} <b>${esc(k.kultur)}</b> <span class="badge ${b}">${esc(k.status)}</span><br><span class="small">${esc(k.grund)}</span></li>`;
+  }).join("");
+  return `
+  ${a.ko_kriterium?`<div class="card"><div class="warnbox">🛑 <b>K.O.:</b> ${esc(a.ko_kriterium)}</div></div>`:""}
+  <div class="card">
+    ${scoreRing(a.score, a.label, `<span class="badge ${a.score>=65?"ok":a.score>=50?"warn":"bad"}">${esc(a.label)}</span> <span class="small">${esc(a.lat)}, ${esc(a.lon)} · ${a.dauer_s}s</span>`)}
+  </div>
+  ${aussageBox(a.aussagekraft, a.gegenwert)}
+  <div class="card"><h3>📊 Faktoren</h3>${bars}</div>
+  ${(a.behoerden||[]).length?`<div class="card"><h3>🏛️ Behörden-Layer</h3><ul class="clean">${a.behoerden.map(l=>{
+    const ic = l.treffer ? (l.stufe==="rot"?"🛑":"⚠️") : "✅";
+    return `<li>${ic} <b>${esc(l.label)}</b>${l.treffer?` – <span class="small">${esc((l.namen||[]).join("; "))}</span>`:' <span class="small">frei</span>'}</li>`;
+  }).join("")}</ul></div>`:""}
+  <div><button class="secondary" onclick="window.print()">🖨️ Exposé drucken</button></div>
+  <div class="card"><h3>🌾 Kultur-Eignung</h3><ul class="clean">${kult}</ul>
+  <p class="small">Regelwerk transparent im Code (kulturmatrix). LPIS-Feldblock-Prüfung folgt als WFS-Punktabfrage.</p></div>
+  <details class="raw card"><summary>Rohdaten</summary><pre>${esc(JSON.stringify(a,null,2))}</pre></details>`;
+}
+async function save(){
+  const label = document.getElementById("q").value.trim() || "Standort";
+  const lat = parseFloat(document.getElementById("lat").value),
+        lon = parseFloat(document.getElementById("lon").value);
+  if(!isFinite(lat)||!isFinite(lon)){ alert("Bitte gültige Koordinaten (oder erst Suchen + Prüfen)."); return; }
+  try{
+    const d = await j("/api/standorte",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({label: label.slice(0,120), lat, lon})});
+    alert("Gespeichert (ID "+d.id+")."); loadSites();
+  }catch(err){ alert("Speichern fehlgeschlagen: "+err.message); }
+}
+async function loadSites(){
+  try{
+    const d = await j("/api/standorte");
+    document.getElementById("sites").innerHTML = d.length
+      ? d.map(s=>`<li><b>${esc(s.label)}</b> – ${esc(s.lat)}, ${esc(s.lon)} <span class="small">[ID ${s.id}] <a href="#" onclick="useSite(${s.lat},${s.lon});return false;">übernehmen</a> · <a href="#" onclick="delSite(${s.id});return false;" style="color:#ff9d9d">löschen</a></span></li>`).join("")
+      : '<li class="small">Noch keine Standorte.</li>';
+  }catch(err){ document.getElementById("sites").innerHTML = `<li class="err">Laden fehlgeschlagen: ${esc(err.message)}</li>`; }
+}
+async function delSite(id){
+  if(!confirm("Standort wirklich löschen?")) return;
+  await fetch("/api/standorte/"+id,{method:"DELETE"}); loadSites();
+}
+function useSite(lat, lon){ setCoords(lat, lon); show("A"); check(); }
+async function loadBeete(){
+  try{
+    const d = await j("/api/beete");
+    document.getElementById("beete").innerHTML = d.length
+      ? d.map(b=>`<li><b>${esc(b.name)}</b>${b.kultur?` – ${esc(b.kultur)}`:""} <button class="danger" onclick="delBeet(${b.id})">löschen</button><br><span class="small">${esc(b.notiz||"")}</span></li>`).join("")
+      : '<li class="small">Noch keine Beete. Lege oben dein erstes an.</li>';
+  }catch(err){ document.getElementById("beete").innerHTML = `<li class="err">Laden fehlgeschlagen: ${esc(err.message)}</li>`; }
+}
+async function addBeet(){
+  const name = document.getElementById("beetName").value.trim();
+  if(!name){ alert("Bitte einen Beet-Namen eingeben."); return; }
+  const body = {name, kultur: document.getElementById("beetKultur").value.trim(), notiz: document.getElementById("beetNotiz").value.trim()};
+  const sid = parseInt(document.getElementById("beetSite").value, 10);
+  if(isFinite(sid)) body.standort_id = sid;
+  try{
+    await j("/api/beete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    document.getElementById("beetName").value = ""; document.getElementById("beetKultur").value = "";
+    document.getElementById("beetNotiz").value = ""; document.getElementById("beetSite").value = "";
+    loadBeete();
+  }catch(err){ alert("Speichern fehlgeschlagen: "+err.message); }
+}
+async function delBeet(id){ if(!confirm("Beet wirklich löschen?")) return; await fetch("/api/beete/"+id,{method:"DELETE"}); loadBeete(); }
+initMap(48.7758, 9.1829);
+j("/api/health").then(h=>{document.getElementById("ver").textContent=(h.version||"")+" · "+(h.status||"");})
+.catch(()=>{document.getElementById("ver").textContent="Backend offline?";});
+loadSites();
+</script>
+</body>
+</html>

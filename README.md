@@ -4,7 +4,7 @@ Lokale App auf Basis `daten-bw.de / groups=agri` (Geoportal BW, LUBW, InVeKoS LP
 Bodenschätzung, AWGN, Biosphäre). 1 LXC, 1 App, 2 Module. Kein Cloud-Zwang:
 ohne Netz antwortet die API mit gekennzeichnetem Cache/Mock.
 
-- **Stack:** Python 3.11+ / FastAPI / Uvicorn / SQLite (Stdlib), Vanilla-JS + Leaflet-Karte (CDN, mit Offline-Fallback)
+- **Stack:** Python 3.11+ / FastAPI / Uvicorn / SQLite (Stdlib) · Frontend: **React 18 + Vite** (SPA; Build in `app/static` committet, der LXC braucht kein Node) · Leaflet gebündelt statt CDN
 - **Port:** `8000` (via `APP_PORT` änderbar)
 - **LXC-Default:** Debian 13 unprivileged, 2 vCPU, 2 GB RAM, 12 GB Disk, `onboot: 1`
 
@@ -57,15 +57,30 @@ DEBUG=1 bash -x install/heimgrund.sh
 4. Verifiziert selbst: `systemctl is-active heimgrund` + `curl localhost:8000/api/health`, gibt finale URL + CT-IP aus.
 5. Bei Fehlern: komplette Fehlerkette (Exit-Code, Befehl, Stack, `systemctl status`, `journalctl -n 50`). Log: `/tmp/heimgrund-install.log`.
 
-Aus lokalem Checkout (ohne GitHub): `install/heimgrund.sh` pusht `app/` automatisch per `pct push`, wenn `app/main.py` nebenan liegt.
+Aus lokalem Checkout (ohne GitHub): `install/heimgrund.sh` pusht `app/` (inkl. kompletten `app/static`-Build) automatisch per `pct push`, wenn `app/main.py` nebenan liegt.
+
+## Frontend entwickeln (React + Vite)
+
+```bash
+cd frontend
+npm install                     # Node 18+ lokal nötig – nur auf dem Dev-Rechner, nie im CT
+npm run dev                     # Dev-Server mit Proxy nach localhost:8000 (Backend separat starten)
+npm run build                   # baut nach ../app/static (wird committed)
+python3 -m pytest tests/ -q     # API-Tests (fastapi, httpx, pytest nötig)
+```
+
+- Der Vite-Build landet direkt in `app/static` und wird committed → der LXC braucht nur Python, kein Node.
+- Alte Vanilla-JS-UI steht zur Referenz unter `legacy/index.html`.
 
 ## Web UI
 
 Nach Installation: `http://<LXC-IP>:8000`
 
-- `/` – Tabs Grundstück / Garten / Beete
+- Tabs: Grundstück (Karte + Report) / 🏗️ Bau-Check / 🚜 Acker-Test / 🌲 Wald / Garten / Beete / ❓ Begriffe
+- Tab-Auswahl steht im URL-Hash (`/#bau` etc.), Deep-Links + Browser-Zurück funktionieren
 - `GET /api/health`, `GET /api/meta`, `GET /docs`
 - `GET /api/standort/reverse?lat=48.7758&lon=9.1829`
+- `GET /api/agri/test`, `GET /api/bau/test`, `GET /api/wald/test`
 - `GET /api/garten/empfehlung?lat=..&lon=..`
 - `GET/POST /api/standorte`, `GET/POST/DELETE /api/beete`, `GET /api/export`
 
@@ -103,11 +118,14 @@ curl localhost:8000/api/health
 ## Projekt-Layout
 
 ```
-heimgrund-lxc/
+BW-Agri-Data/
   install/heimgrund.sh
   app/main.py
   app/requirements.txt
-  app/static/index.html
+  app/static/            # React/Vite-Build (committed, wird von FastAPI ausgeliefert)
+  frontend/              # React 18 + Vite Quellcode (npm run build -> app/static)
+  tests/test_api.py      # API-Tests ohne externe Dienste
+  legacy/index.html      # alte Vanilla-JS-UI (Referenz)
   systemd/heimgrund.service
   README.md
 ```

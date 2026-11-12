@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 APP_NAME = "heimgrund"
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.9.0"
 APP_PORT = int(os.environ.get("APP_PORT", "8000"))
 UA = {"User-Agent": "heimgrund/0.2 (personal local use)"}
 
@@ -328,7 +328,7 @@ def pegel_live(lat: float, lon: float) -> dict:
         dist = haversine_km(lat, lon, s["latitude"], s["longitude"])
         mkey = f"pegel:mess:{s['uuid']}"
         mess = cache_get(mkey, 15 * 60)
-        m_cached = True
+        m_cached, merr = True, ""
         if mess is None:
             m_cached = False
             mess, merr = fetch_json(
@@ -337,7 +337,7 @@ def pegel_live(lat: float, lon: float) -> dict:
             if mess:
                 cache_put(mkey, mess)
             else:
-                mess, merr = [], merr
+                mess = []
         entry: dict = {"name": s["longname"], "gewaesser": s["water"]["longname"],
                        "dist_km": round(dist, 1), "lat": s["latitude"], "lon": s["longitude"],
                        "mess_cached": m_cached}
@@ -346,8 +346,8 @@ def pegel_live(lat: float, lon: float) -> dict:
             entry.update({"aktuell_cm": vals[-1], "zeit": mess[-1]["timestamp"],
                           "trend_cm_24h": round(vals[-1] - vals[0], 1) if len(vals) > 1 else 0.0,
                           "verlauf": vals[-48:]})
-        else:
-            entry["fehler"] = merr if isinstance(mess, list) else "keine Messwerte"
+        elif merr:
+            entry["fehler"] = merr
         out_stations.append(entry)
     return {"status": "live", "quelle": "PEGELONLINE (Wasserstraßen des Bundes, HVD)",
             "stationen": out_stations}
@@ -549,6 +549,9 @@ def _lubw_point(layer: dict, lat: float, lon: float) -> dict:
                 "error": f"{type(e).__name__}: {e}"}
     m = _re.search(r'numberMatched="(\d+)"', xml)
     anzahl = int(m.group(1)) if m else 0
+    if not anzahl and "<wfs:member" in xml:
+        # WFS 2.0 darf numberMatched weglassen / "unknown" melden -> member zaehlen
+        anzahl = xml.count("<wfs:member")
     namen: list[str] = []
     if anzahl:
         for pat in (r"<[\w:]*OBJEKT[\w:]*>([^<]{1,120})</",
@@ -573,7 +576,8 @@ def schutz_amtlich(lat: float, lon: float) -> dict:
         layers = [{**layer, **f.result()} for layer, f in futs]
     out = {"status": "live" if any(x["status"] == "live" for x in layers) else "offline",
            "quelle": "LUBW RIPS/GDI-BW (WFS, DL-BY-2.0)", "cached": False, "layer": layers}
-    cache_put(ckey, out)
+    if out["status"] == "live":  # Offline-Ausfaelle nicht tagelang cachen
+        cache_put(ckey, out)
     return out
 
 
@@ -658,8 +662,15 @@ def climate_live(lat: float, lon: float) -> dict:
             y[2] += 1 if (tn is not None and tn < 0) else 0
             y[3] += 1 if (tx is not None and tx >= 30) else 0
         nj = len(years)
+        if nj == 0:
+            return {"status": "fehler", "error": "keine Klimadaten im Zeitraum",
+                    "quelle": "Open-Meteo ERA5"}
         nied = sum(sum(v[1]) for v in years.values()) / nj
-        temp = sum(sum(v[0]) / len(v[0]) for v in years.values()) / nj
+        temp_jahre = [sum(v[0]) / len(v[0]) for v in years.values() if v[0]]
+        if not temp_jahre:
+            return {"status": "fehler", "error": "keine Temperaturwerte im Zeitraum",
+                    "quelle": "Open-Meteo ERA5"}
+        temp = sum(temp_jahre) / len(temp_jahre)
         frost = sum(v[2] for v in years.values()) / nj
         hitze = sum(v[3] for v in years.values()) / nj
         stark = sum(1 for v in years.values() for x in v[1] if x >= 20) / nj
@@ -919,7 +930,8 @@ def denkmal_live(lat: float, lon: float) -> dict:
                for layer, label, base in LAD_LAYER]
     out = {"status": "live" if any(r["status"] == "live" for r in res) else "offline",
            "quelle": "LAD BW via LGL-owsproxy (WMS)", "cached": False, "objekte": res}
-    cache_put(ckey, out)
+    if out["status"] == "live":  # Offline-Ausfaelle nicht tagelang cachen
+        cache_put(ckey, out)
     return out
 
 
@@ -940,17 +952,19 @@ def bau_test(lat: float, lon: float) -> dict:
         amt, denk, osm = f_amt.result(), f_denk.result(), f_osm.result()
         klim, hang, bod = f_klim.result(), f_hang.result(), f_bod.result()
 
-    ko, gelb = [], []
+    ko, gelb, schutz_gelb = [], [], []
     if amt.get("status") == "live":
         for x in amt["layer"]:
             if x.get("treffer") and x["stufe"] == "rot":
                 ko.append(f"{x['label']}: {(x.get('namen') or ['Treffer'])[0]}")
             elif x.get("treffer"):
                 gelb.append(f"{x['label']}: {(x.get('namen') or ['Treffer'])[0]}")
+                schutz_gelb.append(f"{x['label']}: {(x.get('namen') or ['Treffer'])[0]}")
     denkmal_treffer = [o for o in denk.get("objekte", []) if o.get("treffer")]
     if denkmal_treffer:
         gelb.append("Denkmalschutz: " + "; ".join(
             f"{o['label']} ({(o.get('beschreibung') or '')[:80]}…)" for o in denkmal_treffer))
+        schutz_gelb.append("Denkmalschutz: " + "; ".join(o["label"] for o in denkmal_treffer))
 
     # Laerm aus Abstaenden (OSM-Proxy, landesweit)
     ab, bb = osm.get("autobahn_km"), osm.get("bahn_km")
@@ -989,9 +1003,9 @@ def bau_test(lat: float, lon: float) -> dict:
     lage = round(sum(lage_einzel.values()) / len(lage_einzel))
 
     faktoren = {"schutz": {"gewicht": 30,
-                           "wert": 20 if ko else (65 if gelb else 100),
+                           "wert": 20 if ko else (65 if schutz_gelb else 100),
                            "text": ("K.O.: " + "; ".join(ko)) if ko else (
-                               "Auflagen: " + "; ".join(gelb[:3]) if gelb
+                               "Auflagen: " + "; ".join(schutz_gelb[:3]) if schutz_gelb
                                else "Keine Schutzgebiets-Treffer"),
                            "vertrauen": "hoch",
                            "vertrauen_grund": "Amtliche LUBW-Punktabfrage + LAD-Denkmal (±130 m)"},
@@ -1160,7 +1174,8 @@ def boden_lgrb(lat: float, lon: float) -> dict:
            "gesamtbewertung": ges if ges.get("treffer") else None,
            "nfk": nfk if nfk.get("treffer") else None,
            "fehler": "; ".join(x for x in (ges.get("error"), nfk.get("error")) if x) or None}
-    cache_put(ckey, out)
+    if out["status"] == "live":  # Offline-Ausfaelle nicht tagelang cachen
+        cache_put(ckey, out)
     return out
 
 
@@ -1461,20 +1476,6 @@ def garten_empfehlung(lat: float = Query(ge=-90, le=90),
             "wetter": wx.get("aktuell") if wx.get("status") == "live" else None}
 
 
-# ---------------- Frontend ----------------
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
-@app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    idx = STATIC_DIR / "index.html"
-    if not idx.exists():
-        raise HTTPException(status_code=500, detail="Frontend fehlt: app/static/index.html")
-    # no-store: Nach Updates sofort die neue UI, kein veralteter Browser-Cache
-    return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
-
-
 @app.get("/api/export")
 def export_all() -> dict:
     con = db()
@@ -1484,6 +1485,27 @@ def export_all() -> dict:
                 "exported_at": datetime.now(timezone.utc).isoformat()}
     finally:
         con.close()
+
+
+# ---------------- Frontend (React/Vite-Build liegt in app/static) ----------------
+if (STATIC_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa(full_path: str) -> FileResponse:
+    """Echte Dateien aus app/static ausliefern, sonst index.html (SPA-Fallback)."""
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Unbekannte API-Route")
+    idx = STATIC_DIR / "index.html"
+    if not idx.exists():
+        raise HTTPException(status_code=500,
+                            detail="Frontend fehlt: npm run build in frontend/ -> app/static/")
+    cand = (STATIC_DIR / full_path).resolve() if full_path else None
+    if cand is not None and cand.is_file() and cand.is_relative_to(STATIC_DIR):
+        return FileResponse(str(cand))
+    # no-store: Nach Updates sofort die neue UI, kein veralteter Browser-Cache
+    return FileResponse(str(idx), headers={"Cache-Control": "no-store"})
 
 
 if __name__ == "__main__":
